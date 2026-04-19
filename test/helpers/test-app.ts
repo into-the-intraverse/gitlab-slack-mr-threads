@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,8 +27,11 @@ export async function createTestApp(opts?: {
   enabledProjectIds?: number[];
   projectChannelMap?: Record<number, string>;
 }): Promise<TestApp> {
-  const dir = mkdtempSync(join(tmpdir(), "glsp-app-"));
-  const dbPath = opts?.dbPath ?? join(dir, "test.db");
+  // The DB lives in its own tmpdir so that cleanup() can close resources
+  // without deleting the DB file — this enables the restart-recovery test to
+  // pass a dbPath from a previous app instance without the file being wiped.
+  const ownedDbDir = opts?.dbPath ? null : mkdtempSync(join(tmpdir(), "glsp-db-"));
+  const dbPath = opts?.dbPath ?? join(ownedDbDir!, "test.db");
   const { db } = openDb(`file:${dbPath}`);
 
   const here = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +62,9 @@ export async function createTestApp(opts?: {
       await worker.stop();
       await app.close();
       await db.destroy();
-      rmSync(dir, { recursive: true, force: true });
+      // DB tmpdir is intentionally NOT deleted here so that a caller-provided
+      // dbPath (restart test) can be reused across app instances.  The OS will
+      // clean up the glsp-db-* tmpdirs at reboot / tmpdir rotation.
     },
   };
 }
