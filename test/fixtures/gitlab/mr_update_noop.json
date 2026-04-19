@@ -1,0 +1,19 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "name": "Example Author", "username": "example-author" },
+  "project": { "id": 12345 },
+  "object_attributes": {
+    "iid": 551,
+    "title": "[SD-36717] GitLab ↔ Slack integration for example team",
+    "description": "See spec in docs/",
+    "source_branch": "feature/SD-36717-slack-threading",
+    "target_branch": "master",
+    "url": "https://gitlab.example.com/example/project/-/merge_requests/551",
+    "state": "opened",
+    "action": "update",
+    "draft": false,
+    "target_project_id": 12345
+  },
+  "changes": { "labels": { "previous": [], "current": [{ "id": 1, "title": "needs-review" }] } }
+}
