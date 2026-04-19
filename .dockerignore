@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+data
+.env
+.env.local
+.git
+.github
+docs
+test
+scripts
+**/*.md
