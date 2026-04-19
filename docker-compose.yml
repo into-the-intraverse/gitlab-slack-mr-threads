@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    image: gitlab-slack-mr-threads:local
+    ports:
+      - "8080:8080"
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_DEFAULT_CHANNEL_ID: ${SLACK_DEFAULT_CHANNEL_ID}
+      PROJECT_CHANNEL_MAP: ${PROJECT_CHANNEL_MAP:-}
+      ENABLED_PROJECT_IDS: ${ENABLED_PROJECT_IDS:-}
+      GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET}
+      GITLAB_BASE_URL: ${GITLAB_BASE_URL}
+      JIRA_KEY_REGEX: ${JIRA_KEY_REGEX:-[A-Z][A-Z0-9]+-\d+}
+      DATABASE_URL: file:/app/data/app.db
+      PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-500}
+    volumes:
+      - app_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  app_data:
