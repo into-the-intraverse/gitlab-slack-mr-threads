@@ -49,7 +49,12 @@ export function makeWorker(deps: WorkerDeps): Worker {
 
     let event;
     try {
-      const raw = JSON.parse(row.payload_json);
+      // ParseJSONResultsPlugin may have already deserialised the column into an
+      // object; fall back to JSON.parse only when it's still a string.
+      const raw =
+        typeof row.payload_json === "string"
+          ? JSON.parse(row.payload_json)
+          : row.payload_json;
       event = mergeRequestEventSchema.parse(raw);
     } catch (err) {
       deps.log.warn(
