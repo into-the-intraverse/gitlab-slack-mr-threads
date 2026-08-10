@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GitLab webhook simulator</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --panel-2: #232730; --line: #2f3542;
+    --fg: #e6e8ec; --dim: #98a0ae; --accent: #7aa2f7; --ok: #6ecf82;
+    --warn: #e0af68; --err: #f07178;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-size: 14px; }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  #health { margin-left: auto; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #health b { color: var(--fg); font-weight: 600; }
+
+  main { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px 32px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  section > h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); margin: 0 0 12px; font-weight: 600; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .grid .wide { grid-column: 1 / -1; }
+  label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  input, textarea, select {
+    width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 13px;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; line-height: 1.45; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .row > *:first-child { flex: 1; }
+
+  button {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #0f1115; border-color: var(--accent); font-weight: 600; }
+  button.ghost { background: transparent; }
+
+  .scenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 560px) { .scenarios { grid-template-columns: 1fr; } }
+  .scenario { text-align: left; padding: 9px 11px; line-height: 1.35; }
+  .scenario .name { display: block; font-weight: 600; }
+  .scenario .hint { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+  .arr { color: var(--dim); font-size: 12px; }
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 12px; }
+  .legend dt { white-space: nowrap; }
+  .legend dd { margin: 0; color: var(--dim); }
+
+  #log { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; }
+  .entry { border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px; padding: 8px 10px; background: var(--panel-2); }
+  .entry.ok { border-left-color: var(--ok); }
+  .entry.warn { border-left-color: var(--warn); }
+  .entry.err { border-left-color: var(--err); }
+  .entry .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .entry .code { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .entry.ok .code { color: var(--ok); }
+  .entry.warn .code { color: var(--warn); }
+  .entry.err .code { color: var(--err); }
+  .entry .what { font-weight: 600; }
+  .entry .meta { color: var(--dim); font-size: 11px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .entry pre { margin: 6px 0 0; font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
+  .note { color: var(--dim); font-size: 11px; line-height: 1.5; margin: 10px 0 0; }
+  code { font-family: ui-monospace, Consolas, monospace; background: var(--panel-2); padding: 1px 4px; border-radius: 3px; font-size: .92em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>GitLab webhook simulator</h1>
+  <span class="sub">fakes <code>Merge Request Hook</code> deliveries against this bot</span>
+  <span id="health">healthz: …</span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Target</h2>
+      <div class="grid">
+        <div class="wide">
+          <label for="f-url">Webhook URL</label>
+          <input id="f-url" spellcheck="false" />
+        </div>
+        <div class="wide">
+          <label for="f-secret">GITLAB_WEBHOOK_SECRET (sent as <code>X-Gitlab-Token</code>)</label>
+          <input id="f-secret" type="password" spellcheck="false" autocomplete="off" />
+        </div>
+      </div>
+      <p class="note">Keep the URL on this same origin — a different host needs CORS, which the bot does not send.</p>
+    </section>
+
+    <section>
+      <h2>Merge request</h2>
+      <div class="grid">
+        <div>
+          <label for="f-projectId">project.id</label>
+          <input id="f-projectId" type="number" />
+        </div>
+        <div>
+          <label for="f-mrIid">MR iid</label>
+          <div class="row">
+            <input id="f-mrIid" type="number" />
+            <button id="new-mr" class="ghost" title="Random iid — starts a brand-new Slack thread">new</button>
+          </div>
+        </div>
+        <div class="wide">
+          <label for="f-title">Title <span style="opacity:.7">(Jira key is picked up from title / branch / description)</span></label>
+          <input id="f-title" spellcheck="false" />
+        </div>
+        <div class="wide">
+          <label for="f-description">Description</label>
+          <input id="f-description" spellcheck="false" />
+        </div>
+        <div>
+          <label for="f-author">Author name</label>
+          <input id="f-author" spellcheck="false" />
+        </div>
+        <div>
+          <label for="f-username">Author username</label>
+          <input id="f-username" spellcheck="false" />
+        </div>
+        <div>
+          <label for="f-sourceBranch">Source branch</label>
+          <input id="f-sourceBranch" spellcheck="false" />
+        </div>
+        <div>
+          <label for="f-targetBranch">Target branch</label>
+          <input id="f-targetBranch" spellcheck="false" />
+        </div>
+        <div class="wide">
+          <label for="f-reviewers">Reviewers <span style="opacity:.7">(GitLab usernames, comma-separated — sent as <code>reviewers[]</code>)</span></label>
+          <input id="f-reviewers" spellcheck="false" placeholder="anna.nowak, piotr.zielinski" />
+        </div>
+        <div class="wide">
+          <label for="f-projectUrl">Project web URL</label>
+          <input id="f-projectUrl" spellcheck="false" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Status legend</h2>
+      <div class="flow">
+        <span class="chip">📝 Draft</span><span class="arr">→</span>
+        <span class="chip">👀 Open</span><span class="arr">→</span>
+        <span class="chip">✅ Approved</span><span class="arr">→</span>
+        <span class="chip">🔀 Merged</span>
+        <span class="arr">&nbsp;·&nbsp; any state →</span>
+        <span class="chip">🚫 Closed</span>
+      </div>
+      <dl class="legend">
+        <dt>📝 Draft</dt><dd>work in progress, not up for review</dd>
+        <dt>👀 Open</dt><dd>in flight, waiting for review</dd>
+        <dt>✅ Approved</dt><dd>quorum reached, cleared to merge</dd>
+        <dt>🔀 Merged</dt><dd>landed in the target branch</dd>
+        <dt>🚫 Closed</dt><dd>dropped without merging</dd>
+      </dl>
+      <p class="note">
+        One vocabulary: a reply that moves the MR into a state opens with that state's glyph, so
+        <code>🔀 Merged into master</code> in the thread and 🔀 in the parent read as one fact.
+        Events that change no state keep glyphs of their own — 👍 approval, ↩️ revoked,
+        ⚠️ quorum lost, 🧵 threads resolved.
+      </p>
+    </section>
+
+    <section>
+      <h2>Scenarios</h2>
+      <div class="scenarios" id="scenarios"></div>
+      <div class="toolbar" style="margin: 12px 0 0">
+        <button id="lifecycle">▶ Full lifecycle</button>
+        <button id="lifecycle-draft" class="ghost">▶ Draft → ready → merge</button>
+      </div>
+      <p class="note">A scenario click builds the payload, drops it in the editor and sends it right away.</p>
+    </section>
+
+    <section>
+      <h2>Edge cases</h2>
+      <div class="scenarios" id="edges"></div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>Payload</h2>
+      <textarea id="payload" rows="22" spellcheck="false"></textarea>
+      <div class="toolbar" style="margin: 10px 0 0">
+        <button id="send" class="primary">Send this payload</button>
+        <button id="resend" class="ghost" title="Same X-Gitlab-Webhook-UUID as the last send">Resend as duplicate</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Log</h2>
+      <div class="toolbar"><button id="clear" class="ghost">Clear</button></div>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const FIELDS = [
+    "url", "secret", "projectId", "mrIid", "title", "description",
+    "author", "username", "sourceBranch", "targetBranch", "reviewers", "projectUrl",
+  ];
+  const DEFAULTS = {
+    url: location.origin + "/webhooks/gitlab",
+    secret: "",
+    projectId: 12345,
+    mrIid: 551,
+    title: "[SD-36717] GitLab ↔ Slack integration for example team",
+    description: "See spec in docs/",
+    author: "Example Author",
+    username: "example-author",
+    sourceBranch: "feature/SD-36717-slack-threading",
+    targetBranch: "master",
+    reviewers: "",
+    projectUrl: "https://gitlab.example.com/example/project",
+  };
+  const STORE_KEY = "gitlab-sim-v1";
+
+  const $ = (id) => document.getElementById(id);
+  const el = (id) => $("f-" + id);
+
+  // ---------- form state ----------
+
+  function load() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); } catch { /* ignore */ }
+    for (const f of FIELDS) el(f).value = saved[f] ?? DEFAULTS[f];
+    // A stored URL from another host would silently break on CORS.
+    if (!el("url").value.startsWith(location.origin)) el("url").value = DEFAULTS.url;
+  }
+  function save() {
+    const out = {};
+    for (const f of FIELDS) out[f] = el(f).value;
+    localStorage.setItem(STORE_KEY, JSON.stringify(out));
+  }
+  function state() {
+    const s = {};
+    for (const f of FIELDS) s[f] = el(f).value;
+    return s;
+  }
+  // The secret is persisted too — this is a local dev tool, not a shared page.
+  document.addEventListener("input", (e) => {
+    if (e.target.id && e.target.id.startsWith("f-")) save();
+  });
+
+  // ---------- payload building ----------
+
+  // "anna.nowak" → { name: "Anna Nowak", username: "anna.nowak" }, mimicking how
+  // GitLab fills reviewers[]. Email is [REDACTED] there for anyone without a
+  // public address in their profile, so it is not worth faking.
+  function parseReviewers(raw) {
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((username, i) => ({
+        id: 100 + i,
+        name: username
+          .split(/[._-]/)
+          .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+          .join(" "),
+        username,
+        email: "[REDACTED]",
+      }));
+  }
+
+  function basePayload() {
+    const s = state();
+    const iid = Number(s.mrIid) || 1;
+    const projectUrl = s.projectUrl.replace(/\/+$/, "");
+    const projectId = Number(s.projectId) || 1;
+    const reviewers = parseReviewers(s.reviewers);
+    return {
+      object_kind: "merge_request",
+      event_type: "merge_request",
+      user: { name: s.author, username: s.username },
+      project: { id: projectId, web_url: projectUrl },
+      object_attributes: {
+        iid,
+        title: s.title,
+        description: s.description,
+        source_branch: s.sourceBranch,
+        target_branch: s.targetBranch,
+        url: projectUrl + "/-/merge_requests/" + iid,
+        state: "opened",
+        action: "open",
+        draft: false,
+        target_project_id: projectId,
+      },
+      ...(reviewers.length ? { reviewers } : {}),
+    };
+  }
+
+  const SCENARIOS = [
+    {
+      id: "open", name: "👀 Opened",
+      hint: "new parent message in the channel",
+      build: (p) => p,
+    },
+    {
+      id: "open_draft", name: "📝 Opened as draft",
+      hint: "parent posts with Draft status",
+      build: (p) => { p.object_attributes.draft = true; return p; },
+    },
+    {
+      id: "draft_on", name: "📝 Marked as draft",
+      hint: 'update + changes.draft → reply "Marked as draft"',
+      build: (p) => {
+        p.object_attributes.action = "update";
+        p.object_attributes.draft = true;
+        p.changes = { draft: { previous: false, current: true } };
+        return p;
+      },
+    },
+    {
+      id: "draft_off", name: "👀 Ready for review",
+      hint: "draft flag flips back → status Open",
+      build: (p) => {
+        p.object_attributes.action = "update";
+        p.object_attributes.draft = false;
+        p.changes = { draft: { previous: true, current: false } };
+        return p;
+      },
+    },
+    {
+      id: "threads_resolved", name: "🧵 All threads resolved",
+      hint: "update + changes.blocking_discussions_resolved",
+      build: (p) => {
+        p.object_attributes.action = "update";
+        p.object_attributes.blocking_discussions_resolved = true;
+        p.changes = { blocking_discussions_resolved: { previous: false, current: true } };
+        return p;
+      },
+    },
+    {
+      id: "approval", name: "👍 Approval",
+      hint: "+1 approval, threaded reply",
+      build: (p) => { p.object_attributes.action = "approval"; return p; },
+    },
+    {
+      id: "approved", name: "✅ Approved (quorum)",
+      hint: "status → Approved",
+      build: (p) => { p.object_attributes.action = "approved"; return p; },
+    },
+    {
+      id: "unapproval", name: "↩️ Approval revoked",
+      hint: "−1 approval, threaded reply",
+      build: (p) => { p.object_attributes.action = "unapproval"; return p; },
+    },
+    {
+      id: "unapproved", name: "👀 Quorum lost",
+      hint: "status back to Open + ⚠️ reply",
+      build: (p) => { p.object_attributes.action = "unapproved"; return p; },
+    },
+    {
+      id: "noop", name: "😴 Noop update",
+      hint: "label change only → nothing posted",
+      build: (p) => {
+        p.object_attributes.action = "update";
+        p.changes = { labels: { previous: [], current: [{ title: "needs-review" }] } };
+        return p;
+      },
+    },
+    {
+      id: "merge", name: "🔀 Merged",
+      hint: "status → Merged + reply",
+      build: (p) => {
+        p.object_attributes.action = "merge";
+        p.object_attributes.state = "merged";
+        return p;
+      },
+    },
+    {
+      id: "close", name: "🚫 Closed",
+      hint: "status → Closed + reply",
+      build: (p) => {
+        p.object_attributes.action = "close";
+        p.object_attributes.state = "closed";
+        return p;
+      },
+    },
+    {
+      id: "reopen", name: "🔁 Reopened",
+      hint: "out of scope in v1 — expect no change",
+      build: (p) => { p.object_attributes.action = "reopen"; return p; },
+    },
+  ];
+
+  const EDGES = [
+    {
+      id: "duplicate", name: "Duplicate delivery",
+      hint: "same webhook UUID → 200 {duplicate:true}",
+      run: () => {
+        if (!lastSent) return logLine("warn", "Duplicate delivery", "—", "nothing sent yet");
+        return send(lastSent.body, { label: "Duplicate delivery", webhookUuid: lastSent.webhookUuid });
+      },
+    },
+    {
+      id: "bad_token", name: "Wrong secret",
+      hint: "expect 401 unauthorized",
+      run: () => send($("payload").value, { label: "Wrong secret", token: "definitely-not-the-secret" }),
+    },
+    {
+      id: "no_uuid", name: "Missing UUID header",
+      hint: "expect 400",
+      run: () => send($("payload").value, { label: "Missing UUID header", omitWebhookUuid: true }),
+    },
+    {
+      id: "garbage", name: "Non-MR payload",
+      hint: "expect 200, worker skips it",
+      run: () => send(JSON.stringify({ object_kind: "push", ref: "refs/heads/master" }, null, 2),
+        { label: "Non-MR payload" }),
+    },
+  ];
+
+  function stage(scenario) {
+    const payload = scenario.build(basePayload());
+    $("payload").value = JSON.stringify(payload, null, 2);
+    return $("payload").value;
+  }
+
+  // ---------- sending ----------
+
+  let lastSent = null;
+
+  function uuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+
+  async function send(body, opts = {}) {
+    const s = state();
+    const label = opts.label ?? "Send";
+    const webhookUuid = opts.webhookUuid ?? uuid();
+
+    const headers = {
+      "content-type": "application/json",
+      "x-gitlab-event": "Merge Request Hook",
+      "x-gitlab-token": opts.token ?? s.secret,
+      "x-gitlab-event-uuid": uuid(),
+    };
+    if (!opts.omitWebhookUuid) headers["x-gitlab-webhook-uuid"] = webhookUuid;
+
+    const t0 = performance.now();
+    try {
+      const res = await fetch(s.url, { method: "POST", headers, body });
+      const text = await res.text();
+      const ms = Math.round(performance.now() - t0);
+      const kind = res.ok ? (text.includes('"duplicate":true') ? "warn" : "ok") : "err";
+      logLine(kind, label, res.status, text, `${ms} ms · ${webhookUuid.slice(0, 8)}`);
+      if (res.ok && !opts.omitWebhookUuid) lastSent = { body, webhookUuid };
+      refreshHealth();
+      return res.ok;
+    } catch (err) {
+      const hint = s.url.startsWith(location.origin)
+        ? "is the bot running?"
+        : "cross-origin request — open this page from the bot's own host";
+      logLine("err", label, "network", `${err} — ${hint}`);
+      return false;
+    }
+  }
+
+  async function runScenario(scenario) {
+    return send(stage(scenario), { label: scenario.name });
+  }
+
+  async function runSequence(ids, gapMs = 1200) {
+    for (const id of ids) {
+      const sc = SCENARIOS.find((x) => x.id === id);
+      const ok = await runScenario(sc);
+      if (!ok) return;
+      await new Promise((r) => setTimeout(r, gapMs));
+    }
+  }
+
+  // ---------- log ----------
+
+  function logLine(kind, what, code, body, meta) {
+    const node = document.createElement("div");
+    node.className = "entry " + kind;
+    const head = document.createElement("div");
+    head.className = "head";
+    head.innerHTML =
+      `<span class="code"></span><span class="what"></span><span class="meta"></span>`;
+    head.querySelector(".code").textContent = code;
+    head.querySelector(".what").textContent = what;
+    head.querySelector(".meta").textContent = meta ?? new Date().toLocaleTimeString();
+    node.appendChild(head);
+    if (body) {
+      const pre = document.createElement("pre");
+      pre.textContent = body.length > 600 ? body.slice(0, 600) + "…" : body;
+      node.appendChild(pre);
+    }
+    $("log").prepend(node);
+  }
+
+  // ---------- health ----------
+
+  async function refreshHealth() {
+    const s = state();
+    let healthUrl;
+    try { healthUrl = new URL("/healthz", s.url).href; } catch { return; }
+    if (!healthUrl.startsWith(location.origin)) { $("health").textContent = ""; return; }
+    try {
+      const res = await fetch(healthUrl, { cache: "no-store" });
+      const h = await res.json();
+      $("health").innerHTML =
+        `healthz · pending <b>${h.inbox_pending}</b> · failed <b>${h.inbox_failed}</b> · oldest <b>${h.oldest_pending_age_ms}</b> ms`;
+    } catch {
+      $("health").innerHTML = `healthz · <b style="color:var(--err)">unreachable</b>`;
+    }
+  }
+
+  // ---------- wiring ----------
+
+  for (const sc of SCENARIOS) {
+    const b = document.createElement("button");
+    b.className = "scenario";
+    b.innerHTML = `<span class="name"></span><span class="hint"></span>`;
+    b.querySelector(".name").textContent = sc.name;
+    b.querySelector(".hint").textContent = sc.hint;
+    b.addEventListener("click", () => runScenario(sc));
+    $("scenarios").appendChild(b);
+  }
+
+  for (const e of EDGES) {
+    const b = document.createElement("button");
+    b.className = "scenario";
+    b.innerHTML = `<span class="name"></span><span class="hint"></span>`;
+    b.querySelector(".name").textContent = e.name;
+    b.querySelector(".hint").textContent = e.hint;
+    b.addEventListener("click", () => e.run());
+    $("edges").appendChild(b);
+  }
+
+  $("send").addEventListener("click", () => send($("payload").value, { label: "Send (editor)" }));
+  $("resend").addEventListener("click", () => EDGES[0].run());
+  $("clear").addEventListener("click", () => { $("log").innerHTML = ""; });
+  $("lifecycle").addEventListener("click", () =>
+    runSequence(["open", "approval", "approved", "merge"]));
+  $("lifecycle-draft").addEventListener("click", () =>
+    runSequence(["open_draft", "draft_off", "approval", "merge"]));
+  $("new-mr").addEventListener("click", () => {
+    el("mrIid").value = String(100 + Math.floor(Math.random() * 9900));
+    save();
+    stage(SCENARIOS[0]);
+  });
+
+  load();
+  stage(SCENARIOS[0]);
+  refreshHealth();
+  setInterval(refreshHealth, 5000);
+})();
+</script>
+</body>
+</html>

@@ -9,6 +9,8 @@ import { buildApp } from "../../src/server/app.js";
 import { makeWorker, type Worker } from "../../src/worker/worker.js";
 import type { FastifyInstance } from "fastify";
 import { FakeSlackClient } from "./fake-slack.js";
+import { makeSlackDirectory } from "../../src/slack/directory.js";
+import type { SlackUser } from "../../src/slack/client.js";
 
 export type TestApp = {
   app: FastifyInstance;
@@ -26,6 +28,10 @@ export async function createTestApp(opts?: {
   dbPath?: string;
   enabledProjectIds?: number[];
   projectChannelMap?: Record<number, string>;
+  devSimulator?: boolean;
+  slackUsers?: SlackUser[];
+  slackUserMap?: Record<string, string>;
+  jiraBaseUrl?: string;
 }): Promise<TestApp> {
   // The DB lives in its own tmpdir so that cleanup() can close resources
   // without deleting the DB file — this enables the restart-recovery test to
@@ -40,16 +46,31 @@ export async function createTestApp(opts?: {
 
   const log = pino({ level: "silent" });
   const slack = new FakeSlackClient();
+  slack.users = opts?.slackUsers ?? [];
+  const directory = makeSlackDirectory({
+    slack,
+    log,
+    overrides: opts?.slackUserMap ?? {},
+  });
+  await directory.refresh();
+
   const worker = makeWorker({
     db,
     slack,
+    directory,
     log,
-    jiraKeyRegex: /[A-Z][A-Z0-9]+-\d+/,
+    jiraKeyRegex: /[A-Z][A-Z0-9]+-\d+/i,
+    jiraBaseUrl: opts?.jiraBaseUrl ?? null,
     slackDefaultChannelId: DEFAULT_CHANNEL,
     projectChannelMap: opts?.projectChannelMap ?? {},
     enabledProjectIds: opts?.enabledProjectIds ?? [],
   });
-  const app = buildApp({ db, log, gitlabWebhookSecret: SECRET });
+  const app = buildApp({
+    db,
+    log,
+    gitlabWebhookSecret: SECRET,
+    devSimulator: opts?.devSimulator ?? false,
+  });
   await app.ready();
 
   return {

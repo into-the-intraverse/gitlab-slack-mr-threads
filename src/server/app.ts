@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { registerWebhookRoute } from "./webhook.js";
 import { registerHealthRoute } from "./health.js";
+import { registerSimulatorRoute } from "./simulator.js";
 import type { KyselyDb } from "../db/index.js";
 import type { Logger } from "../logger.js";
 
@@ -9,6 +10,7 @@ export type BuildAppDeps = {
   db: KyselyDb;
   log: Logger;
   gitlabWebhookSecret: string;
+  devSimulator?: boolean;
 };
 
 export function buildApp(deps: BuildAppDeps): FastifyInstance {
@@ -28,6 +30,7 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
     log: deps.log,
     gitlabWebhookSecret: deps.gitlabWebhookSecret,
   });
+  if (deps.devSimulator) registerSimulatorRoute(baseApp);
 
   return baseApp;
 }

@@ -2,6 +2,7 @@ import type {
   PostParentInput,
   PostReplyInput,
   SlackClient,
+  SlackUser,
   UpdateParentInput,
   PostResult,
 } from "../../src/slack/client.js";
@@ -13,6 +14,9 @@ export type FakeCall =
 
 export class FakeSlackClient implements SlackClient {
   public calls: FakeCall[] = [];
+  public users: SlackUser[] = [];
+  /** Set to make listUsers() reject, mimicking a missing `users:read` scope. */
+  public listUsersError: Error | null = null;
   private nextTsN = 1_700_000_000;
 
   async postParent(input: PostParentInput): Promise<PostResult> {
@@ -27,6 +31,11 @@ export class FakeSlackClient implements SlackClient {
 
   async postReply(input: PostReplyInput): Promise<void> {
     this.calls.push({ kind: "postReply", ...input });
+  }
+
+  async listUsers(): Promise<SlackUser[]> {
+    if (this.listUsersError) throw this.listUsersError;
+    return this.users;
   }
 
   filter(kind: FakeCall["kind"]): FakeCall[] {

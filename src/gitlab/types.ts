@@ -16,13 +16,18 @@ export type MergeRequestAction = z.infer<typeof mergeRequestActionSchema>;
 const changesFieldSchema = <T extends z.ZodTypeAny>(inner: T) =>
   z.object({ previous: inner.nullable().optional(), current: inner.nullable().optional() });
 
+const gitlabUserSchema = z.object({
+  name: z.string(),
+  username: z.string(),
+});
+
 export const mergeRequestEventSchema = z.object({
   object_kind: z.literal("merge_request"),
   event_type: z.literal("merge_request").optional(),
-  user: z.object({
-    name: z.string(),
-    username: z.string(),
-  }),
+  // The user who *triggered* the event, not necessarily the MR author. GitLab
+  // only exposes the author as a numeric `author_id`, so the author is captured
+  // from this field on the `open` event and persisted.
+  user: gitlabUserSchema,
   project: z.object({
     id: z.number().int(),
     web_url: z.string().url().optional(),
@@ -39,9 +44,13 @@ export const mergeRequestEventSchema = z.object({
     draft: z.boolean().optional().default(false),
     target_project_id: z.number().int().optional(),
   }),
+  reviewers: z.array(gitlabUserSchema).optional(),
   changes: z
     .object({
       draft: changesFieldSchema(z.boolean()).optional(),
+      // GitLab has no dedicated action for "all threads resolved"; it arrives as
+      // action=update carrying this flag.
+      blocking_discussions_resolved: changesFieldSchema(z.boolean()).optional(),
       title: changesFieldSchema(z.string()).optional(),
       labels: z.any().optional(),
       description: changesFieldSchema(z.string()).optional(),

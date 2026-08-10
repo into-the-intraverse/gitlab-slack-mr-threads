@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STATUS_EMOJI } from "../../src/slack/blocks.js";
 import { renderReplyText } from "../../src/slack/reply.js";
 import type { MergeRequestEvent } from "../../src/gitlab/types.js";
 
@@ -41,7 +42,34 @@ describe("renderReplyText", () => {
   it("draft off", () => {
     expect(
       renderReplyText(evt("update", {}, { draft: { previous: true, current: false } })),
-    ).toBe("🟢 Ready for review");
+    ).toBe("👀 Ready for review");
+  });
+
+  it("all threads resolved", () => {
+    expect(
+      renderReplyText(
+        evt("update", {}, { blocking_discussions_resolved: { previous: false, current: true } }),
+      ),
+    ).toBe("🧵 All threads resolved");
+  });
+
+  it("threads becoming unresolved is not reported", () => {
+    expect(
+      renderReplyText(
+        evt("update", {}, { blocking_discussions_resolved: { previous: true, current: false } }),
+      ),
+    ).toBeNull();
+  });
+
+  it("a draft toggle wins over a simultaneous thread resolution", () => {
+    expect(
+      renderReplyText(
+        evt("update", {}, {
+          draft: { previous: true, current: false },
+          blocking_discussions_resolved: { previous: false, current: true },
+        }),
+      ),
+    ).toBe("👀 Ready for review");
   });
 
   it("approval with name", () => {
@@ -60,14 +88,49 @@ describe("renderReplyText", () => {
     expect(renderReplyText(evt("approved"))).toBe("✅ All required approvals received");
   });
 
+  it("unapproved quorum", () => {
+    expect(renderReplyText(evt("unapproved"))).toBe(
+      "⚠️ Approval quorum lost — needs review again",
+    );
+  });
+
   it("merge uses target_branch", () => {
     expect(renderReplyText(evt("merge", { target_branch: "master" }))).toBe(
-      "🟣 Merged into `master`",
+      "🔀 Merged into `master`",
     );
   });
 
   it("close", () => {
-    expect(renderReplyText(evt("close"))).toBe("⚫ Closed without merge");
+    expect(renderReplyText(evt("close"))).toBe("🚫 Closed without merge");
+  });
+
+  // One vocabulary: an event that lands the MR in a state opens with that
+  // state's glyph. Read off STATUS_EMOJI so the pairing cannot drift.
+  it.each([
+    ["marked draft", evt("update", {}, { draft: { previous: false, current: true } }), "draft"],
+    ["ready for review", evt("update", {}, { draft: { previous: true, current: false } }), "open"],
+    ["quorum reached", evt("approved"), "approved"],
+    ["merged", evt("merge"), "merged"],
+    ["closed", evt("close"), "closed"],
+  ] as const)("%s reply opens with the glyph of the state it produces", (_name, event, status) => {
+    expect(renderReplyText(event)?.startsWith(STATUS_EMOJI[status])).toBe(true);
+  });
+
+  it("events that change no state keep glyphs of their own", () => {
+    const stateGlyphs = new Set(Object.values(STATUS_EMOJI));
+    const nonTransitions = [
+      renderReplyText(evt("approval")),
+      renderReplyText(evt("unapproval")),
+      renderReplyText(evt("unapproved")),
+      renderReplyText(
+        evt("update", {}, { blocking_discussions_resolved: { previous: false, current: true } }),
+      ),
+    ].filter((r): r is string => r !== null);
+
+    expect(nonTransitions).toHaveLength(4);
+    for (const reply of nonTransitions) {
+      expect(stateGlyphs.has([...reply][0])).toBe(false);
+    }
   });
 
   it("update without draft change → null", () => {

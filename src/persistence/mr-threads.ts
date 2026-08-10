@@ -9,6 +9,7 @@ export type MrThreadInsert = {
   jira_key: string | null;
   title: string;
   author_name: string;
+  author_username: string | null;
   source_branch: string;
   target_branch: string;
   web_url: string;

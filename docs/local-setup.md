@@ -22,6 +22,9 @@ bun install
 3. In **OAuth & Permissions → Scopes → Bot Token Scopes**, add:
    - `chat:write` — post and update messages
    - `chat:write.public` — post in channels the bot is not a member of (optional; if you prefer inviting the bot, skip this)
+   - `users:read` — resolve GitLab usernames to Slack accounts so the author and reviewers get
+     real `@`-mentions. Without it the bot still works, but names are posted as plain text and
+     nobody is notified. Set `SLACK_MENTIONS=false` to skip the lookup entirely.
 4. Click **Install to Workspace** at the top of the same page. Approve.
 5. Copy the **Bot User OAuth Token** (starts with `xoxb-…`). This is your `SLACK_BOT_TOKEN`.
 6. Invite the bot to the target channel: in Slack, `/invite @MR Threads Bot` inside `#mr-reviews`.
@@ -89,7 +92,31 @@ Watch your Slack channel — a new parent message should appear.
 
 Then replay `mr_merged.json` and verify the parent flips to `Merged` and a threaded reply appears.
 
-## 9. Troubleshooting
+## 9. Browser simulator (recommended while wiring up Slack)
+
+Set `DEV_SIMULATOR=true` in `.env`, restart (`bun run dev`), and open:
+
+~~~
+http://127.0.0.1:8080/dev/simulator
+~~~
+
+Paste the same value as `GITLAB_WEBHOOK_SECRET` into the **secret** field, then click scenarios
+(`Opened`, `Approval`, `Merged`, …) and watch the Slack channel. Each click builds a real
+`Merge Request Hook` payload, sends it to `/webhooks/gitlab`, and logs the HTTP response.
+
+- **new** next to the MR iid starts a brand-new Slack thread — threads are keyed on
+  `(project.id, iid)`, so reuse the same iid to keep appending to one thread.
+- **▶ Full lifecycle** fires `open → approval → approved → merge` with a pause between events.
+- The **Edge cases** row covers wrong secret (401), missing UUID header (400), duplicate delivery
+  (`{"duplicate":true}`) and a non-MR payload (accepted, then skipped by the worker).
+- The **Payload** box is editable — tweak the JSON and hit *Send this payload* for anything the
+  buttons do not cover.
+- The header shows live `/healthz` counters, so a stuck `pending` or a rising `failed` is visible
+  without tailing logs.
+
+Keep `DEV_SIMULATOR` off in production: the route is simply not registered when it is unset.
+
+## 10. Troubleshooting
 
 - **401 from `/webhooks/gitlab`** → `X-Gitlab-Token` mismatch. Check `.env` vs GitLab webhook config.
 - **200 but no Slack post** → check logs. Common causes: `channel_not_found` (bot not invited), token is not a bot token.

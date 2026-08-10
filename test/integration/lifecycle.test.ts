@@ -6,6 +6,8 @@ import draftOff from "../fixtures/gitlab/mr_draft_off.json";
 import approval from "../fixtures/gitlab/mr_approval.json";
 import approvedQuorum from "../fixtures/gitlab/mr_approved_quorum.json";
 import unapproval from "../fixtures/gitlab/mr_unapproval.json";
+import unapproved from "../fixtures/gitlab/mr_unapproved.json";
+import threadsResolved from "../fixtures/gitlab/mr_threads_resolved.json";
 import merged from "../fixtures/gitlab/mr_merged.json";
 
 let t: TestApp;
@@ -75,5 +77,43 @@ describe("MR lifecycle", () => {
       "👍 Approved by Example Reviewer",
       "↩️ Approval revoked by Example Reviewer",
     ]);
+  });
+
+  it("all-threads-resolved posts a reply without touching the parent status", async () => {
+    await postWebhook(t.app, opened, { webhookUuid: "wh-o" });
+    await drainWorker(t.worker);
+    const updatesBefore = t.slack.filter("updateParent").length;
+
+    await postWebhook(t.app, threadsResolved, { webhookUuid: "wh-r" });
+    await drainWorker(t.worker);
+
+    const replies = t.slack.filter("postReply");
+    expect(replies.map((r) => (r as { text: string }).text)).toEqual(["🧵 All threads resolved"]);
+
+    // Status is unchanged, so the parent is left alone.
+    expect(t.slack.filter("updateParent")).toHaveLength(updatesBefore);
+    const row = await t.db.selectFrom("mr_threads").selectAll().executeTakeFirst();
+    expect(row?.status).toBe("open");
+  });
+
+  it("unapproved flips the parent back to Open and warns in-thread", async () => {
+    await postWebhook(t.app, opened, { webhookUuid: "wh-o" });
+    await postWebhook(t.app, approvedQuorum, { webhookUuid: "wh-a" });
+    await postWebhook(t.app, unapproved, { webhookUuid: "wh-u" });
+    await drainWorker(t.worker);
+
+    const row = await t.db.selectFrom("mr_threads").selectAll().executeTakeFirst();
+    expect(row?.status).toBe("open");
+
+    const replies = t.slack.filter("postReply");
+    expect(replies.map((r) => (r as { text: string }).text)).toEqual([
+      "✅ All required approvals received",
+      "⚠️ Approval quorum lost — needs review again",
+    ]);
+
+    const updates = t.slack.filter("updateParent");
+    const lastUpdate = updates[updates.length - 1] as { text: string };
+    expect(lastUpdate).toBeDefined();
+    expect(lastUpdate.text).toContain("Open");
   });
 });

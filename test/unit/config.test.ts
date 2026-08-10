@@ -24,8 +24,35 @@ describe("loadConfig", () => {
     expect(cfg.logLevel).toBe("info");
     expect(cfg.workerPollMs).toBe(500);
     expect(cfg.jiraKeyRegex.source).toBe("[A-Z][A-Z0-9]+-\\d+");
+    // Compiled case-insensitively so `abc-1234` is picked up too.
+    expect(cfg.jiraKeyRegex.flags).toBe("i");
+    expect("abc-1234").toMatch(cfg.jiraKeyRegex);
     expect(cfg.enabledProjectIds).toEqual([]);
     expect(cfg.projectChannelMap).toEqual({});
+    expect(cfg.devSimulator).toBe(false);
+  });
+
+  it("treats an empty JIRA_BASE_URL as unset (docker-compose passes '')", () => {
+    expect(loadConfig({ ...BASE_ENV, JIRA_BASE_URL: "" }).jiraBaseUrl).toBeNull();
+    expect(loadConfig(BASE_ENV).jiraBaseUrl).toBeNull();
+  });
+
+  it("trims the trailing slash off JIRA_BASE_URL", () => {
+    expect(loadConfig({ ...BASE_ENV, JIRA_BASE_URL: "https://jira.example.com/" }).jiraBaseUrl).toBe(
+      "https://jira.example.com",
+    );
+  });
+
+  it("rejects a non-URL JIRA_BASE_URL", () => {
+    expect(() => loadConfig({ ...BASE_ENV, JIRA_BASE_URL: "jira.example.com" })).toThrow(
+      /JIRA_BASE_URL/,
+    );
+  });
+
+  it("parses DEV_SIMULATOR", () => {
+    expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "true" }).devSimulator).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "1" }).devSimulator).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "no" }).devSimulator).toBe(false);
   });
 
   it("parses ENABLED_PROJECT_IDS", () => {

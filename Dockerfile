@@ -24,6 +24,7 @@ USER app
 COPY --from=deps  /app/prod_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
+COPY public ./public
 COPY package.json ./
 ENV NODE_ENV=production
 EXPOSE 8080

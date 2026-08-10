@@ -6,15 +6,15 @@ One merge request = one Slack thread. Parent message stays live with current sta
 
 - Receives GitLab MR webhooks.
 - Creates a Slack parent message on MR open.
-- Updates the parent's status header on every state change (draft, approved, merged, closed).
-- Posts a short threaded reply for each event.
+- Updates the parent's status on every state change (draft, approved, merged, closed).
+- Posts a short threaded reply for each event, including "all threads resolved".
+- Mentions the MR author and reviewers so they actually get pinged.
 - One durable `(project_id, mr_iid) → slack_thread_ts` mapping per MR.
 - Safe against duplicate webhook deliveries.
 - Safe across restarts.
 
 ## What it does not do (yet)
 
-- "All discussions resolved" detection
 - Reopened MRs
 - MR comments mirrored into the thread
 - Slack → GitLab 2-way sync

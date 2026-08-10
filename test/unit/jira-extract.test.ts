@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { extractJiraKey } from "../../src/jira/extract.js";
 
-const RE = /[A-Z][A-Z0-9]+-\d+/;
+// Mirrors how loadConfig() compiles JIRA_KEY_REGEX — always with the `i` flag.
+const RE = /[A-Z][A-Z0-9]+-\d+/i;
 
 describe("extractJiraKey", () => {
   it("finds key in title first", () => {
@@ -26,8 +27,24 @@ describe("extractJiraKey", () => {
     expect(extractJiraKey(RE, "SD-1 and SD-2", "x", "y")).toBe("SD-1");
   });
 
-  it("rejects lowercase (regex is case-sensitive)", () => {
-    expect(extractJiraKey(RE, "sd-1", "feature/sd-2", "sd-3")).toBeNull();
+  it("accepts a lowercase key and normalises it to upper case", () => {
+    expect(extractJiraKey(RE, "abc-1234 fix the thing", "x", "y")).toBe("ABC-1234");
+  });
+
+  it("normalises mixed case too", () => {
+    expect(extractJiraKey(RE, "Abc-1234", "x", "y")).toBe("ABC-1234");
+  });
+
+  it("finds a lowercase key in the branch and description as well", () => {
+    expect(extractJiraKey(RE, "no key", "feature/sd-2-thing", "body")).toBe("SD-2");
+    expect(extractJiraKey(RE, "no key", "feature/none", "refs abc-7 here")).toBe("ABC-7");
+  });
+
+  it("gives the same key regardless of how it was typed", () => {
+    const variants = ["abc-1234", "ABC-1234", "Abc-1234", "[abc-1234] title"];
+    const keys = variants.map((v) => extractJiraKey(RE, v, "x", "y"));
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toBe("ABC-1234");
   });
 
   it("requires numeric suffix", () => {

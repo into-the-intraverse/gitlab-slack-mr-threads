@@ -19,12 +19,16 @@ import { renderParentBlocks } from "../slack/blocks.js";
 import { renderReplyText } from "../slack/reply.js";
 import { hashParent } from "../slack/hash.js";
 import { resolveChannel, isProjectEnabled } from "../server/routing.js";
+import type { SlackDirectory } from "../slack/directory.js";
 
 export type WorkerDeps = {
   db: KyselyDb;
   slack: SlackClient;
+  /** When null, names are rendered as plain text and nobody is notified. */
+  directory: SlackDirectory | null;
   log: Logger;
   jiraKeyRegex: RegExp;
+  jiraBaseUrl: string | null;
   slackDefaultChannelId: string;
   projectChannelMap: Record<number, string>;
   enabledProjectIds: number[];
@@ -111,12 +115,29 @@ export function makeWorker(deps: WorkerDeps): Worker {
 
       const approvalsCount = Math.max(0, (existing?.approvals_count ?? 0) + derived.approvalsDelta);
 
+      // `event.user` is whoever triggered this event. The author is only that
+      // person on `open`, so afterwards the stored value wins.
+      const authorName = existing?.author_name ?? event.user.name;
+      const authorUsername =
+        existing?.author_username ?? (action === "open" ? event.user.username : null);
+
+      const authorMention =
+        deps.directory && authorUsername
+          ? deps.directory.mention(authorUsername, authorName)
+          : null;
+      const reviewerMentions = deps.directory
+        ? (event.reviewers ?? []).map((r) => deps.directory!.mention(r.username, r.name))
+        : [];
+
       const renderInput = {
         status: derived.status,
         jiraKey,
+        jiraUrl: jiraKey && deps.jiraBaseUrl ? `${deps.jiraBaseUrl}/browse/${jiraKey}` : null,
         title: event.object_attributes.title,
         mrIid,
-        authorName: event.user.name,
+        authorName,
+        authorMention,
+        reviewerMentions,
         sourceBranch: event.object_attributes.source_branch,
         targetBranch: event.object_attributes.target_branch,
         webUrl: event.object_attributes.url,
@@ -154,7 +175,8 @@ export function makeWorker(deps: WorkerDeps): Worker {
           slack_thread_ts: ts,
           jira_key: jiraKey,
           title: event.object_attributes.title,
-          author_name: event.user.name,
+          author_name: authorName,
+          author_username: authorUsername,
           source_branch: event.object_attributes.source_branch,
           target_branch: event.object_attributes.target_branch,
           web_url: event.object_attributes.url,

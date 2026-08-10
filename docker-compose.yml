@@ -12,10 +12,15 @@ services:
       GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET}
       GITLAB_BASE_URL: ${GITLAB_BASE_URL}
       JIRA_KEY_REGEX: ${JIRA_KEY_REGEX:-[A-Z][A-Z0-9]+-\d+}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
       DATABASE_URL: file:/app/data/app.db
       PORT: "8080"
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_POLL_MS: ${WORKER_POLL_MS:-500}
+      DEV_SIMULATOR: ${DEV_SIMULATOR:-false}
+      SLACK_MENTIONS: ${SLACK_MENTIONS:-true}
+      SLACK_USER_MAP: ${SLACK_USER_MAP:-}
+      SLACK_DIRECTORY_REFRESH_MS: ${SLACK_DIRECTORY_REFRESH_MS:-900000}
     volumes:
       - app_data:/app/data
     restart: unless-stopped
