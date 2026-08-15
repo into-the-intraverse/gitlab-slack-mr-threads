@@ -11,6 +11,7 @@ export type BuildAppDeps = {
   log: Logger;
   gitlabWebhookSecret: string;
   devSimulator?: boolean;
+  socketConnected?: () => boolean;
 };
 
 export function buildApp(deps: BuildAppDeps): FastifyInstance {
@@ -24,7 +25,7 @@ export function buildApp(deps: BuildAppDeps): FastifyInstance {
   // FastifyInstance<...,FastifyBaseLogger,...> that the route helpers expect.
   const baseApp = app as unknown as FastifyInstance;
 
-  registerHealthRoute(baseApp, deps.db);
+  registerHealthRoute(baseApp, deps.db, deps.socketConnected);
   registerWebhookRoute(baseApp, {
     db: deps.db,
     log: deps.log,

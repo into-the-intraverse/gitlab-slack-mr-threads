@@ -37,6 +37,7 @@ export async function createTestApp(opts?: {
   slackUsers?: SlackUser[];
   slackUserMap?: Record<string, string>;
   jiraBaseUrl?: string;
+  socketConnected?: () => boolean;
 }): Promise<TestApp> {
   // The DB lives in its own tmpdir so that cleanup() can close resources
   // without deleting the DB file — this enables the restart-recovery test to
@@ -76,6 +77,7 @@ export async function createTestApp(opts?: {
     log,
     gitlabWebhookSecret: SECRET,
     devSimulator: opts?.devSimulator ?? false,
+    ...(opts?.socketConnected ? { socketConnected: opts.socketConnected } : {}),
   });
   await app.ready();
 

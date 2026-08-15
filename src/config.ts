@@ -25,6 +25,9 @@ const rawSchema = z.object({
   // could grant themselves permanent access, so it belongs to whoever runs the
   // deployment.
   SLACK_ADMIN_USER_IDS: z.string().optional().default(""),
+  // Empty means "no settings panel", so the bot still boots before the Slack
+  // app has been reconfigured for Socket Mode.
+  SLACK_APP_TOKEN: z.string().optional().default(""),
   DEV_SIMULATOR: z.string().optional().default("false"),
 });
 
@@ -38,6 +41,7 @@ export type Config = {
   workerPollMs: number;
   slackDirectoryRefreshMs: number;
   slackAdminUserIds: string[];
+  slackAppToken: string | null;
   devSimulator: boolean;
 };
 
@@ -56,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
     slackAdminUserIds: parsed.SLACK_ADMIN_USER_IDS.split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    slackAppToken: parsed.SLACK_APP_TOKEN || null,
     devSimulator: parseBool(parsed.DEV_SIMULATOR),
   };
 }

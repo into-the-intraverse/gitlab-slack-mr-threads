@@ -33,6 +33,11 @@ describe("loadConfig", () => {
     expect(loadConfig(BASE_ENV).slackAdminUserIds).toEqual([]);
   });
 
+  it("treats a missing SLACK_APP_TOKEN as no panel", () => {
+    expect(loadConfig(BASE_ENV).slackAppToken).toBeNull();
+    expect(loadConfig({ ...BASE_ENV, SLACK_APP_TOKEN: "xapp-1" }).slackAppToken).toBe("xapp-1");
+  });
+
   it("parses DEV_SIMULATOR", () => {
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "true" }).devSimulator).toBe(true);
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "1" }).devSimulator).toBe(true);

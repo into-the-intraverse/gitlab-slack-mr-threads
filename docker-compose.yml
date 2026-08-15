@@ -11,6 +11,8 @@ services:
       SLACK_DIRECTORY_REFRESH_MS: ${SLACK_DIRECTORY_REFRESH_MS:-900000}
       # Slack user IDs that may change settings, on top of workspace admins and owners.
       SLACK_ADMIN_USER_IDS: ${SLACK_ADMIN_USER_IDS:-}
+      # App-level token (xapp-...) with connections:write. Empty turns the panel off.
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
       GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET}
       GITLAB_BASE_URL: ${GITLAB_BASE_URL}
       DATABASE_URL: file:/app/data/app.db
