@@ -62,7 +62,9 @@ describe("Slack mentions with an explicit override", () => {
   beforeEach(async () => {
     t = await createTestApp({
       slackUsers: SLACK_USERS,
-      slackUserMap: { "ghost.user": "U_GHOST" },
+      // Overrides are validated on the way into the settings store, so this has
+      // to look like a real Slack id: uppercase alphanumerics, no underscores.
+      slackUserMap: { "ghost.user": "U0GHOST99" },
     });
   });
 
@@ -71,7 +73,7 @@ describe("Slack mentions with an explicit override", () => {
     await drainWorker(t.worker);
 
     expect(metaLine(t.slack.filter("postParent")[0])).toContain(
-      "Reviewers: <@U_ANNA> · <@U_GHOST>",
+      "Reviewers: <@U_ANNA> · <@U0GHOST99>",
     );
   });
 });

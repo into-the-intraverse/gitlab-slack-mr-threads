@@ -4,7 +4,8 @@ import { openDb } from "./db/index.js";
 import { migrateToLatest } from "./db/migrate.js";
 import { buildApp } from "./server/app.js";
 import { makeRealSlackClient } from "./slack/client.js";
-import { makeSlackDirectory, type SlackDirectory } from "./slack/directory.js";
+import { makeSlackDirectory } from "./slack/directory.js";
+import { makeSettingsStore } from "./settings/store.js";
 import { makeWorker } from "./worker/worker.js";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,28 +20,16 @@ async function main(): Promise<void> {
   await migrateToLatest(db, migrationsFolder);
   log.info("db migrated");
 
+  const settings = makeSettingsStore(db);
   const slack = makeRealSlackClient(cfg.slackBotToken);
 
-  let directory: SlackDirectory | null = null;
-  if (cfg.slackMentions) {
-    directory = makeSlackDirectory({ slack, log, overrides: cfg.slackUserMap });
-    await directory.refresh();
-    directory.start(cfg.slackDirectoryRefreshMs);
-  } else {
-    log.info("SLACK_MENTIONS is off; reviewers and author are posted as plain names");
-  }
+  // Always constructed: `mentions_enabled` is a hot setting, so the index has to
+  // already be warm when someone switches mentions back on from the panel.
+  const directory = makeSlackDirectory({ slack, log, overrides: (await settings.read()).user_map });
+  await directory.refresh();
+  directory.start(cfg.slackDirectoryRefreshMs);
 
-  const worker = makeWorker({
-    db,
-    slack,
-    directory,
-    log,
-    jiraKeyRegex: cfg.jiraKeyRegex,
-    jiraBaseUrl: cfg.jiraBaseUrl,
-    slackDefaultChannelId: cfg.slackDefaultChannelId,
-    projectChannelMap: cfg.projectChannelMap,
-    enabledProjectIds: cfg.enabledProjectIds,
-  });
+  const worker = makeWorker({ db, slack, directory, log, settings });
   worker.start(cfg.workerPollMs);
   log.info({ pollMs: cfg.workerPollMs }, "worker started");
 
@@ -54,7 +43,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     log.info({ signal }, "shutting down");
-    directory?.stop();
+    directory.stop();
     await worker.stop();
     await app.close();
     await db.destroy();

@@ -3,6 +3,7 @@ import type { Logger } from "../logger.js";
 import type { SlackClient } from "../slack/client.js";
 import {
   claimNextPending,
+  countPending,
   markFailed,
   markProcessed,
 } from "../persistence/inbox.js";
@@ -18,20 +19,18 @@ import { deriveStatus } from "../state/derive.js";
 import { renderParentBlocks } from "../slack/blocks.js";
 import { renderReplyText } from "../slack/reply.js";
 import { hashParent } from "../slack/hash.js";
-import { resolveChannel, isProjectEnabled } from "../server/routing.js";
+import { getProject, touchProject } from "../settings/projects.js";
+import { isProjectEnabled, resolveChannel } from "../settings/routing.js";
+import type { SettingsStore } from "../settings/store.js";
 import type { SlackDirectory } from "../slack/directory.js";
 
 export type WorkerDeps = {
   db: KyselyDb;
   slack: SlackClient;
-  /** When null, names are rendered as plain text and nobody is notified. */
-  directory: SlackDirectory | null;
+  /** Always present; the hot `mentions_enabled` setting decides whether it is consulted. */
+  directory: SlackDirectory;
   log: Logger;
-  jiraKeyRegex: RegExp;
-  jiraBaseUrl: string | null;
-  slackDefaultChannelId: string;
-  projectChannelMap: Record<number, string>;
-  enabledProjectIds: number[];
+  settings: SettingsStore;
 };
 
 export type Worker = {
@@ -44,8 +43,25 @@ export function makeWorker(deps: WorkerDeps): Worker {
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let busy = false;
+  let lastUnconfiguredWarnAt = 0;
 
   async function processOnce(): Promise<boolean> {
+    const cfg = await deps.settings.read();
+    if (!cfg.default_channel_id) {
+      // Nothing is claimed and nothing is marked failed: the rows stay untouched
+      // in the inbox and drain by themselves once a channel is picked. Being
+      // unconfigured is temporary, so events are held rather than lost.
+      const now = Date.now();
+      if (now - lastUnconfiguredWarnAt > 60_000) {
+        lastUnconfiguredWarnAt = now;
+        deps.log.warn(
+          { pending: await countPending(deps.db) },
+          "worker: no default channel configured; events are held in the inbox",
+        );
+      }
+      return false;
+    }
+
     const row = await claimNextPending(deps.db);
     if (!row) return false;
 
@@ -81,7 +97,15 @@ export function makeWorker(deps: WorkerDeps): Worker {
     const mrIid = event.object_attributes.iid;
     const action = event.object_attributes.action;
 
-    if (!isProjectEnabled(deps.enabledProjectIds, projectId)) {
+    // A project earns its row by sending an event; nobody types one in by hand.
+    await touchProject(deps.db, {
+      projectId,
+      ...(event.project.name ? { name: event.project.name } : {}),
+      ...(event.project.web_url ? { webUrl: event.project.web_url } : {}),
+    });
+    const project = await getProject(deps.db, projectId);
+
+    if (!isProjectEnabled(project)) {
       deps.log.debug({ corr_id: corr, projectId }, "worker: project not enabled, skipping");
       await writeAudit(deps.db, {
         correlation_id: corr,
@@ -107,7 +131,7 @@ export function makeWorker(deps: WorkerDeps): Worker {
       const jiraKey =
         existing?.jira_key ??
         extractJiraKey(
-          deps.jiraKeyRegex,
+          await deps.settings.jiraKeyRegex(),
           event.object_attributes.title,
           event.object_attributes.source_branch,
           event.object_attributes.description ?? "",
@@ -122,17 +146,17 @@ export function makeWorker(deps: WorkerDeps): Worker {
         existing?.author_username ?? (action === "open" ? event.user.username : null);
 
       const authorMention =
-        deps.directory && authorUsername
+        cfg.mentions_enabled && authorUsername
           ? deps.directory.mention(authorUsername, authorName)
           : null;
-      const reviewerMentions = deps.directory
-        ? (event.reviewers ?? []).map((r) => deps.directory!.mention(r.username, r.name))
+      const reviewerMentions = cfg.mentions_enabled
+        ? (event.reviewers ?? []).map((r) => deps.directory.mention(r.username, r.name))
         : [];
 
       const renderInput = {
         status: derived.status,
         jiraKey,
-        jiraUrl: jiraKey && deps.jiraBaseUrl ? `${deps.jiraBaseUrl}/browse/${jiraKey}` : null,
+        jiraUrl: jiraKey && cfg.jira_base_url ? `${cfg.jira_base_url}/browse/${jiraKey}` : null,
         title: event.object_attributes.title,
         mrIid,
         authorName,
@@ -158,11 +182,7 @@ export function makeWorker(deps: WorkerDeps): Worker {
           );
         }
 
-        const channel = resolveChannel(
-          deps.projectChannelMap,
-          deps.slackDefaultChannelId,
-          projectId,
-        );
+        const channel = resolveChannel(project, cfg.default_channel_id);
         const { ts } = await deps.slack.postParent({
           channel,
           text: rendered.text,

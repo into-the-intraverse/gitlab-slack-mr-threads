@@ -30,6 +30,9 @@ export const mergeRequestEventSchema = z.object({
   user: gitlabUserSchema,
   project: z.object({
     id: z.number().int(),
+    // Optional because the test fixtures carry only `id`. Real deliveries are
+    // expected to include both; the settings panel falls back to `Project <id>`.
+    name: z.string().optional(),
     web_url: z.string().url().optional(),
   }),
   object_attributes: z.object({

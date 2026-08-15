@@ -11,23 +11,28 @@ import type { FastifyInstance } from "fastify";
 import { FakeSlackClient } from "./fake-slack.js";
 import { makeSlackDirectory } from "../../src/slack/directory.js";
 import type { SlackUser } from "../../src/slack/client.js";
+import { makeSettingsStore, type SettingsStore } from "../../src/settings/store.js";
+import { setProjectEnabled } from "../../src/settings/projects.js";
 
 export type TestApp = {
   app: FastifyInstance;
   worker: Worker;
   db: KyselyDb;
   slack: FakeSlackClient;
+  settings: SettingsStore;
   dbPath: string;
+  setProjectOff: (projectId: number) => Promise<void>;
   cleanup: () => Promise<void>;
 };
 
 const SECRET = "test-secret";
 const DEFAULT_CHANNEL = "C-DEFAULT";
+const SEEDER = { userId: "U-TEST", name: "Test Setup" };
 
 export async function createTestApp(opts?: {
   dbPath?: string;
-  enabledProjectIds?: number[];
-  projectChannelMap?: Record<number, string>;
+  /** `null` boots an instance that has no default channel yet. */
+  defaultChannel?: string | null;
   devSimulator?: boolean;
   slackUsers?: SlackUser[];
   slackUserMap?: Record<string, string>;
@@ -47,6 +52,17 @@ export async function createTestApp(opts?: {
   const log = pino({ level: "silent" });
   const slack = new FakeSlackClient();
   slack.users = opts?.slackUsers ?? [];
+
+  // Settings live in the database now, so the old constructor options become
+  // seed writes. `defaultChannel: null` deliberately leaves the bot unconfigured.
+  const settings = makeSettingsStore(db);
+  const defaultChannel = opts?.defaultChannel === undefined ? DEFAULT_CHANNEL : opts.defaultChannel;
+  if (defaultChannel !== null) {
+    await settings.write({ default_channel_id: defaultChannel }, SEEDER);
+  }
+  if (opts?.jiraBaseUrl) await settings.write({ jira_base_url: opts.jiraBaseUrl }, SEEDER);
+  if (opts?.slackUserMap) await settings.write({ user_map: opts.slackUserMap }, SEEDER);
+
   const directory = makeSlackDirectory({
     slack,
     log,
@@ -54,17 +70,7 @@ export async function createTestApp(opts?: {
   });
   await directory.refresh();
 
-  const worker = makeWorker({
-    db,
-    slack,
-    directory,
-    log,
-    jiraKeyRegex: /[A-Z][A-Z0-9]+-\d+/i,
-    jiraBaseUrl: opts?.jiraBaseUrl ?? null,
-    slackDefaultChannelId: DEFAULT_CHANNEL,
-    projectChannelMap: opts?.projectChannelMap ?? {},
-    enabledProjectIds: opts?.enabledProjectIds ?? [],
-  });
+  const worker = makeWorker({ db, slack, directory, log, settings });
   const app = buildApp({
     db,
     log,
@@ -78,7 +84,11 @@ export async function createTestApp(opts?: {
     worker,
     db,
     slack,
+    settings,
     dbPath,
+    async setProjectOff(projectId: number) {
+      await setProjectEnabled(db, projectId, false, SEEDER);
+    },
     async cleanup() {
       await worker.stop();
       await app.close();
