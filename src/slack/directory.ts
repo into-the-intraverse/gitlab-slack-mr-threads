@@ -8,6 +8,8 @@ export type SlackDirectory = {
    * account, otherwise their plain display name (visible, but no notification).
    */
   mention(gitlabUsername: string, displayName: string): string;
+  /** Applied immediately; `user_map` is editable from the panel. */
+  setOverrides(next: Record<string, string>): void;
   refresh(): Promise<void>;
   start(refreshMs: number): void;
   stop(): void;
@@ -27,7 +29,7 @@ export function makeSlackDirectory(deps: SlackDirectoryDeps): SlackDirectory {
   let timer: NodeJS.Timeout | null = null;
   const warned = new Set<string>();
 
-  const overrides = new Map(Object.entries(deps.overrides).map(([k, v]) => [k.toLowerCase(), v]));
+  let overrides = new Map(Object.entries(deps.overrides).map(([k, v]) => [k.toLowerCase(), v]));
 
   async function refresh(): Promise<void> {
     try {
@@ -59,6 +61,9 @@ export function makeSlackDirectory(deps: SlackDirectoryDeps): SlackDirectory {
         deps.log.warn({ gitlabUsername }, "no Slack account matched; posting plain name");
       }
       return escapeMrkdwn(displayName);
+    },
+    setOverrides(next) {
+      overrides = new Map(Object.entries(next).map(([k, v]) => [k.toLowerCase(), v]));
     },
     refresh,
     start(refreshMs) {

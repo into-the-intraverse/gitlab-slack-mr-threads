@@ -14,10 +14,17 @@ const rawSchema = z.object({
   PORT: z.string().optional().default("8080"),
   // Wanted exactly when something is broken, which may include the panel, and
   // read before the database is open. Stays here on purpose.
-  LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).optional().default("info"),
+  LOG_LEVEL: z
+    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
+    .optional()
+    .default("info"),
   // Both drive a setInterval, so a change needs a restart either way.
   WORKER_POLL_MS: z.string().optional().default("500"),
   SLACK_DIRECTORY_REFRESH_MS: z.string().optional().default("900000"),
+  // Stays out of the database on purpose: an admin who could edit this list
+  // could grant themselves permanent access, so it belongs to whoever runs the
+  // deployment.
+  SLACK_ADMIN_USER_IDS: z.string().optional().default(""),
   DEV_SIMULATOR: z.string().optional().default("false"),
 });
 
@@ -30,6 +37,7 @@ export type Config = {
   logLevel: "trace" | "debug" | "info" | "warn" | "error" | "fatal";
   workerPollMs: number;
   slackDirectoryRefreshMs: number;
+  slackAdminUserIds: string[];
   devSimulator: boolean;
 };
 
@@ -45,6 +53,9 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
     logLevel: parsed.LOG_LEVEL,
     workerPollMs: Number(parsed.WORKER_POLL_MS),
     slackDirectoryRefreshMs: Number(parsed.SLACK_DIRECTORY_REFRESH_MS),
+    slackAdminUserIds: parsed.SLACK_ADMIN_USER_IDS.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     devSimulator: parseBool(parsed.DEV_SIMULATOR),
   };
 }

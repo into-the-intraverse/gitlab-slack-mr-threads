@@ -25,6 +25,14 @@ describe("loadConfig", () => {
     expect(cfg.devSimulator).toBe(false);
   });
 
+  it("parses SLACK_ADMIN_USER_IDS", () => {
+    expect(loadConfig({ ...BASE_ENV, SLACK_ADMIN_USER_IDS: "U1, U2" }).slackAdminUserIds).toEqual([
+      "U1",
+      "U2",
+    ]);
+    expect(loadConfig(BASE_ENV).slackAdminUserIds).toEqual([]);
+  });
+
   it("parses DEV_SIMULATOR", () => {
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "true" }).devSimulator).toBe(true);
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "1" }).devSimulator).toBe(true);

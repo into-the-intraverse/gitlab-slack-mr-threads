@@ -59,4 +59,11 @@ describe("makeSlackDirectory", () => {
     await d.refresh();
     expect(d.mention("jan.kowalski", "Jan Kowalski")).toBe("<@U_OVERRIDE>");
   });
+
+  it("applies new overrides without a restart", async () => {
+    const d = await build();
+    expect(d.mention("a.b", "A B")).toBe("A B");
+    d.setOverrides({ "a.b": "U777" });
+    expect(d.mention("a.b", "A B")).toBe("<@U777>");
+  });
 });
