@@ -31,11 +31,29 @@ export type SlackUser = {
   displayName: string;
 };
 
+export type SlackChannelInfo = {
+  id: string;
+  name: string;
+  /** `false` means chat.postMessage would fail with channel_not_found. */
+  isMember: boolean;
+};
+
+export type SlackUserInfo = {
+  id: string;
+  name: string;
+  isAdmin: boolean;
+  isOwner: boolean;
+};
+
 export interface SlackClient {
   postParent(input: PostParentInput): Promise<PostResult>;
   updateParent(input: UpdateParentInput): Promise<void>;
   postReply(input: PostReplyInput): Promise<void>;
   listUsers(): Promise<SlackUser[]>;
+  publishHome(input: { userId: string; view: unknown }): Promise<void>;
+  openModal(input: { triggerId: string; view: unknown }): Promise<void>;
+  getChannel(channelId: string): Promise<SlackChannelInfo>;
+  getUser(userId: string): Promise<SlackUserInfo>;
 }
 
 export function makeRealSlackClient(token: string): SlackClient {
@@ -68,6 +86,29 @@ export function makeRealSlackClient(token: string): SlackClient {
         cursor = r.response_metadata?.next_cursor || undefined;
       } while (cursor);
       return out;
+    },
+    async publishHome({ userId, view }) {
+      await web.views.publish({ user_id: userId, view: view as never });
+    },
+    async openModal({ triggerId, view }) {
+      await web.views.open({ trigger_id: triggerId, view: view as never });
+    },
+    async getChannel(channelId) {
+      const r = await web.conversations.info({ channel: channelId });
+      return {
+        id: channelId,
+        name: r.channel?.name ?? channelId,
+        isMember: r.channel?.is_member === true,
+      };
+    },
+    async getUser(userId) {
+      const r = await web.users.info({ user: userId });
+      return {
+        id: userId,
+        name: r.user?.profile?.display_name || r.user?.real_name || r.user?.name || userId,
+        isAdmin: r.user?.is_admin === true,
+        isOwner: r.user?.is_owner === true,
+      };
     },
   };
 }
