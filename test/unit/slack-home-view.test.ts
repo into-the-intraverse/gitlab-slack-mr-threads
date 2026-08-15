@@ -93,6 +93,15 @@ describe("renderHomeView", () => {
     expect(text).toContain("The bot is not in that channel");
   });
 
+  it("shows a channel error while still unconfigured", () => {
+    const text = json({
+      ...base,
+      settings: { ...SETTINGS_DEFAULTS, default_channel_id: null },
+      channelError: "The bot is not in that channel",
+    });
+    expect(text).toContain("The bot is not in that channel");
+  });
+
   it("renders recent changes", () => {
     const text = json({
       ...base,

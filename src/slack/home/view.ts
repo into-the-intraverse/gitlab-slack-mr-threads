@@ -57,6 +57,9 @@ export function renderHomeView(input: HomeViewInput): { type: "home"; blocks: un
     );
     if (input.canEdit) blocks.push(defaultChannelBlock(input));
     else blocks.push(context("Settings are changed by admins."));
+    // Shown here too: the very first pick is the one most likely to name a
+    // channel the bot was never invited to.
+    if (input.channelError) blocks.push(context(`⚠️ ${escapeMrkdwn(input.channelError)}`));
     return { type: "home", blocks };
   }
 
