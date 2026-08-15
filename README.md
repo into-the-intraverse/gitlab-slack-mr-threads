@@ -9,6 +9,7 @@ One merge request = one Slack thread. Parent message stays live with current sta
 - Updates the parent's status on every state change (draft, approved, merged, closed).
 - Posts a short threaded reply for each event, including "all threads resolved".
 - Mentions the MR author and reviewers so they actually get pinged.
+- Settings live in the database and are edited from the bot's App Home page in Slack.
 - One durable `(project_id, mr_iid) → slack_thread_ts` mapping per MR.
 - Safe against duplicate webhook deliveries.
 - Safe across restarts.
@@ -30,7 +31,17 @@ See `docs/deployment.md`.
 
 ## Configuration
 
-All config via env vars. See `.env.example` and `docs/deployment.md`.
+Split in two:
+
+- **Env** — secrets, the deployment shape, and what is needed before the database is open:
+  tokens, the webhook secret, `DATABASE_URL`, `PORT`, `LOG_LEVEL`, poll intervals, and
+  `SLACK_ADMIN_USER_IDS`. See `.env.example`.
+- **The settings panel** — everything else: default channel, per-project channels and on/off,
+  mentions, Jira link and ticket-key pattern, user overrides. Edited from the bot's Home tab in
+  Slack, stored in the database, applied to the next event without a restart.
+
+A fresh instance boots unconfigured and holds incoming events until someone picks a default
+channel. See `docs/deployment.md`.
 
 ## Running tests
 
@@ -45,13 +56,15 @@ All tests run in-process against a temp SQLite file and a fake Slack client. No 
 
 - **Receiver** (Fastify `POST /webhooks/gitlab`): verifies `X-Gitlab-Token`, writes the raw payload to a durable SQLite `inbox` table keyed by `X-Gitlab-Webhook-UUID`, returns 200 in under 50 ms.
 - **Worker** (in-process tick loop): claims the oldest unprocessed inbox row, derives the MR's new status, mutates the `mr_threads` row, calls Slack.
+- **Settings panel** (Slack App Home over Socket Mode): an outbound WebSocket, so no inbound Slack endpoint exists. Renders the current state and writes changes to the settings tables.
 - **SQLite** as queue + store. Single-process by design.
 
 ## Known limitations
 
 - **Single instance only.** Running >1 replica will double-process inbox rows. If you need HA, migrate to Postgres and add `SELECT … FOR UPDATE SKIP LOCKED` to the worker's claim query.
 - **GitLab's `X-Gitlab-Token` is a plaintext shared secret.** Always run behind TLS.
-- **No retries for `channel_not_found`.** If the bot isn't in a channel, the MR is marked failed. Invite the bot and manually reset the failed inbox row (see `docs/deployment.md`).
+- **No retries for `channel_not_found`.** The panel refuses to save a channel the bot is not in, so this should not happen any more. If a row failed under an earlier configuration, invite the bot and reset it manually (see `docs/deployment.md`).
+- **The settings panel needs one instance.** Socket Mode opens one connection per process, which matches the single-instance constraint above.
 
 ## License
 

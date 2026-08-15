@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<MrStatus, string> = {
 export type ParentRenderInput = {
   status: MrStatus;
   jiraKey: string | null;
-  /** Link target for the ticket; null when JIRA_BASE_URL is unset. */
+  /** Link target for the ticket; null when no Jira address is set in the panel. */
   jiraUrl?: string | null;
   title: string;
   mrIid: number;

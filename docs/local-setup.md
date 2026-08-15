@@ -24,11 +24,20 @@ bun install
    - `chat:write.public` — post in channels the bot is not a member of (optional; if you prefer inviting the bot, skip this)
    - `users:read` — resolve GitLab usernames to Slack accounts so the author and reviewers get
      real `@`-mentions. Without it the bot still works, but names are posted as plain text and
-     nobody is notified. Set `SLACK_MENTIONS=false` to skip the lookup entirely.
-4. Click **Install to Workspace** at the top of the same page. Approve.
-5. Copy the **Bot User OAuth Token** (starts with `xoxb-…`). This is your `SLACK_BOT_TOKEN`.
-6. Invite the bot to the target channel: in Slack, `/invite @MR Threads Bot` inside `#mr-reviews`.
-7. Note the channel ID: right-click the channel in Slack → **Copy link** → the last segment is the ID (starts with `C…`). That is `SLACK_DEFAULT_CHANNEL_ID`.
+     nobody is notified. Mentions can also be switched off in the settings panel.
+   - `channels:read`, `groups:read` — let the panel check that the bot is actually in a channel
+     before saving it
+4. Turn on the settings panel (skip if you only want the webhook side):
+   - **Socket Mode** → enable, generate an app-level token with `connections:write`. That token
+     (`xapp-…`) is your `SLACK_APP_TOKEN`.
+   - **Interactivity & Shortcuts** → enable. No request URL is needed under Socket Mode.
+   - **App Home** → enable the Home tab, leave the Messages tab off.
+   - **Event Subscriptions** → enable, subscribe the bot to `app_home_opened`.
+5. Click **Install to Workspace** at the top of the OAuth page. Approve. Reinstall after any scope
+   change, otherwise the new scopes are not in effect.
+6. Copy the **Bot User OAuth Token** (starts with `xoxb-…`). This is your `SLACK_BOT_TOKEN`.
+7. Invite the bot to the target channel: in Slack, `/invite @MR Threads Bot` inside `#mr-reviews`.
+   You pick that channel in the panel later, not in `.env`.
 
 ## 4. Configure env
 
@@ -38,11 +47,15 @@ Copy `.env.example` to `.env` and fill in values:
 cp .env.example .env
 ~~~
 
-- `SLACK_BOT_TOKEN` — from step 3.5
-- `SLACK_DEFAULT_CHANNEL_ID` — from step 3.7
+- `SLACK_BOT_TOKEN` — from step 3.6
+- `SLACK_APP_TOKEN` — from step 3.4, or leave empty to run without the panel
+- `SLACK_ADMIN_USER_IDS` — your own Slack user ID, so you can change settings without being a
+  workspace admin. Slack profile → **⋮** → **Copy member ID** (starts with `U…`).
 - `GITLAB_WEBHOOK_SECRET` — any random string, e.g. `openssl rand -hex 32`
 - `GITLAB_BASE_URL` — your GitLab host, e.g. `https://gitlab.example.com`
 - `DATABASE_URL` — leave default `file:./data/app.db`
+
+There is no channel, project or Jira setting in `.env` — those live in the panel.
 
 ## 5. Run locally
 
@@ -55,8 +68,28 @@ Health check:
 
 ~~~
 curl -sS http://127.0.0.1:8080/healthz
-# {"ok":true,"inbox_pending":0,"inbox_failed":0,"oldest_pending_age_ms":0}
+# {"ok":true,"inbox_pending":0,"inbox_failed":0,"oldest_pending_age_ms":0,"slack_socket_connected":true}
 ~~~
+
+`slack_socket_connected` is `null` when `SLACK_APP_TOKEN` is unset.
+
+## 5a. Pick a default channel
+
+The bot boots **unconfigured**: it accepts webhooks and holds them, but posts nothing until it has a
+default channel. Open the bot in Slack, switch to the **Home** tab, and pick one. Anything already
+held in the inbox is delivered on the next tick.
+
+Without `SLACK_APP_TOKEN` there is no panel, and the only way to set this is to write the row by
+hand:
+
+~~~
+sqlite3 ./data/app.db "INSERT INTO settings (key, value, updated_at)
+  VALUES ('default_channel_id', '\"C0123456789\"', datetime('now'))
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+~~~
+
+`value` is JSON, hence the quotes inside quotes — a bare `C0123456789` is not valid JSON and the
+worker falls back to the default.
 
 ## 6. Expose your local server to GitLab
 
@@ -119,5 +152,14 @@ Keep `DEV_SIMULATOR` off in production: the route is simply not registered when 
 ## 10. Troubleshooting
 
 - **401 from `/webhooks/gitlab`** → `X-Gitlab-Token` mismatch. Check `.env` vs GitLab webhook config.
-- **200 but no Slack post** → check logs. Common causes: `channel_not_found` (bot not invited), token is not a bot token.
+- **200 but no Slack post, `inbox_pending` climbing** → no default channel yet. Pick one on the Home
+  tab. Nothing is lost; the queue drains once it is set.
+- **200 but no Slack post, `inbox_pending` at 0** → the project is switched off in the panel, or the
+  token is not a bot token. Check the logs.
 - **No events arrive at all** → `ngrok` URL changed on restart; re-paste into GitLab.
+- **The Home tab is empty** → the app has no Home tab enabled, or `app_home_opened` is not
+  subscribed. Both are in step 3.4. Reinstall the app after changing either.
+- **The Home tab shows no buttons** → you are not a workspace admin and your user ID is not in
+  `SLACK_ADMIN_USER_IDS`.
+- **`slack_socket_connected` is `false`** → `SLACK_APP_TOKEN` is wrong or Socket Mode is off. The
+  webhook side keeps working regardless; only the panel is affected.

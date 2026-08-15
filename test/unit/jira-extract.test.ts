@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractJiraKey } from "../../src/jira/extract.js";
 
-// Mirrors how loadConfig() compiles JIRA_KEY_REGEX — always with the `i` flag.
+// Mirrors how the settings store compiles `jira_key_regex` — always with the `i` flag.
 const RE = /[A-Z][A-Z0-9]+-\d+/i;
 
 describe("extractJiraKey", () => {

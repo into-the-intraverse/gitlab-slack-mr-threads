@@ -35,6 +35,22 @@ talks to Slack — a Slack outage costs latency, not events.
 Thread identity is `(project_id, mr_iid)`. The Jira key is display metadata and never identity:
 two MRs can share a ticket.
 
+Settings live in the `settings` and `project_settings` tables, not in env — env keeps only
+secrets, `SLACK_ADMIN_USER_IDS`, and the things needed before the database is open (`LOG_LEVEL`,
+`WORKER_POLL_MS`, `SLACK_DIRECTORY_REFRESH_MS`). The worker re-reads settings on every event, with
+no cache, so a change in the panel applies to the next event. **Anything added to the panel must
+be hot** — the UI has no "restart required" affordance and should not gain one.
+
+Slack reaches the process over Socket Mode, so there is no inbound Slack endpoint and no request
+signing. `src/slack/socket.ts` is transport only; every decision lives in `src/slack/home/*`,
+which is why the panel is testable without a WebSocket. `slack_event` carries the envelope type as
+its own field, not on the body — reading `body.type` gives `event_callback`, not `events_api`.
+Interactivity arrives as envelope type `interactive`, so `src/slack/home/route.ts` reads the
+payload's own `type` to tell a click from a submitted form.
+
+With no `default_channel_id` the worker returns before claiming an inbox row, so events are held
+rather than failed. A disabled project is the opposite: its events are dropped.
+
 ## GitLab payload traps
 
 - **`user` is whoever triggered the event, not the MR author.** The payload has no author

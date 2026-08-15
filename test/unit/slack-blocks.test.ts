@@ -43,7 +43,7 @@ describe("renderParentBlocks", () => {
     );
   });
 
-  it("links the ticket when JIRA_BASE_URL is configured", () => {
+  it("links the ticket when a Jira address is configured", () => {
     const { blocks } = renderParentBlocks({
       ...base,
       jiraUrl: "https://jira.example.com/browse/SD-36717",

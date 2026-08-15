@@ -1,9 +1,14 @@
 # Rollout plan
 
+Which projects are on and where they post is decided in the settings panel (the bot's Home tab in
+Slack), not in env. A project appears on that page by itself the first time it sends an event.
+Creating its webhook is therefore the act that onboards it — there is no list to edit.
+
 ## Phase 1 — Shadow (one project, one channel)
 
-1. Deploy the service with `ENABLED_PROJECT_IDS=<test-project-id>`.
-2. Create the GitLab webhook on that project only (Merge request events).
+1. Deploy the service. Invite the bot to `#mr-reviews`, open its Home tab and pick that channel as
+   the default. Until you do, incoming events are held in the inbox and nothing is posted.
+2. Create the GitLab webhook on the test project only (Merge request events).
 3. Leave native GitLab-for-Slack notifications **on** in all other channels.
 4. Leave them **off** in the target channel `#mr-reviews` to avoid double-posts.
 5. Exercise the lifecycle on a throwaway MR: open → draft → approve → merge. Verify the Slack thread tracks state correctly.
@@ -11,17 +16,20 @@
 ## Phase 2 — Production project
 
 1. Confirm Phase 1 was stable for ≥24 h.
-2. Add the production project ID to `ENABLED_PROJECT_IDS`.
-3. Create the GitLab webhook on that project.
-4. If the project currently routes to `#mr-reviews` via native integration, **turn off** the native GitLab-for-Slack MR events for that project in that channel.
+2. Create the GitLab webhook on the production project. It registers itself on its first event and
+   posts to the default channel.
+3. If the project currently routes to `#mr-reviews` via native integration, **turn off** the native GitLab-for-Slack MR events for that project in that channel.
 
 ## Phase 3 — Expansion
 
 For each additional project:
 
-- Append project ID to `ENABLED_PROJECT_IDS`.
-- Create the webhook.
-- (If using per-project channels) add to `PROJECT_CHANNEL_MAP` and invite the bot to that channel.
+- Create the webhook. Nothing else is required to onboard it.
+- (If it needs a channel of its own) invite the bot there, then set the channel on the project's row
+  in the panel. The panel refuses a channel the bot is not in, so invite first.
+
+To take a project back out without touching GitLab, switch it off in the panel: its events are then
+dropped rather than held.
 
 ## Rollback
 
