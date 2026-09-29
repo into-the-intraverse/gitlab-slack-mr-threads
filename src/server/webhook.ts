@@ -12,20 +12,19 @@ export type WebhookDeps = {
 
 export function registerWebhookRoute(app: FastifyInstance, deps: WebhookDeps): void {
   app.post("/webhooks/gitlab", async (req, reply) => {
-    const token = req.headers["x-gitlab-token"];
-    const tokenStr = Array.isArray(token) ? token[0] : token;
-    if (!verifyGitlabToken(tokenStr, deps.gitlabWebhookSecret)) {
+    // Node joins duplicate headers into one comma-separated string; only
+    // set-cookie is ever handed over as an array. These three never are.
+    const token = req.headers["x-gitlab-token"] as string | undefined;
+    if (!verifyGitlabToken(token, deps.gitlabWebhookSecret)) {
       deps.log.warn({ ip: req.ip }, "webhook: bad token");
       reply.code(401).send({ error: "unauthorized" });
       return;
     }
 
-    const webhookUuid = req.headers["x-gitlab-webhook-uuid"];
-    const eventUuid = req.headers["x-gitlab-event-uuid"];
-    const webhookUuidStr = Array.isArray(webhookUuid) ? webhookUuid[0] : webhookUuid;
-    const eventUuidStr = Array.isArray(eventUuid) ? eventUuid[0] : eventUuid;
+    const webhookUuid = req.headers["x-gitlab-webhook-uuid"] as string | undefined;
+    const eventUuid = req.headers["x-gitlab-event-uuid"] as string | undefined;
 
-    if (!webhookUuidStr) {
+    if (!webhookUuid) {
       reply.code(400).send({ error: "missing X-Gitlab-Webhook-UUID" });
       return;
     }
@@ -42,17 +41,17 @@ export function registerWebhookRoute(app: FastifyInstance, deps: WebhookDeps): v
 
     try {
       const inserted = await insertInboxRow(deps.db, {
-        webhook_uuid: webhookUuidStr,
-        event_uuid: eventUuidStr ?? null,
+        webhook_uuid: webhookUuid,
+        event_uuid: eventUuid ?? null,
         payload_json: payloadStr,
       });
       deps.log.info(
-        { corr_id: webhookUuidStr, inserted },
+        { corr_id: webhookUuid, inserted },
         inserted ? "webhook: enqueued" : "webhook: duplicate ignored",
       );
       reply.code(200).send({ ok: true, duplicate: !inserted });
     } catch (err) {
-      deps.log.error({ err, corr_id: webhookUuidStr }, "webhook: persist failed");
+      deps.log.error({ err, corr_id: webhookUuid }, "webhook: persist failed");
       reply.code(500).send({ error: "persist failed" });
     }
   });

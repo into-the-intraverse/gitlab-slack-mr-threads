@@ -13,7 +13,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
-COPY migrations ./migrations
 RUN npx tsc -p tsconfig.build.json
 
 FROM node:20-alpine AS runtime
@@ -22,8 +21,9 @@ RUN addgroup -S app && adduser -S app -G app \
  && mkdir -p /app/data && chown -R app:app /app
 USER app
 COPY --from=deps  /app/prod_modules ./node_modules
+# The migrations are ordinary modules under src/db/migrations, so they are
+# compiled into dist like everything else and imported by name at boot.
 COPY --from=build /app/dist ./dist
-COPY migrations ./migrations
 COPY public ./public
 COPY package.json ./
 ENV NODE_ENV=production

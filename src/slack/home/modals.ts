@@ -215,8 +215,10 @@ export function parseMessagesModal(
     }
   }
 
+  let userMap: Record<string, string> = {};
   const mapResult = parseUserMapText(text(view, "block_user_map", "user_map"));
-  if (!mapResult.ok) errors.block_user_map = mapResult.error;
+  if (mapResult.ok) userMap = mapResult.value;
+  else errors.block_user_map = mapResult.error;
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
@@ -226,7 +228,7 @@ export function parseMessagesModal(
       mentions_enabled: checked(view, "block_mentions", "mentions"),
       jira_base_url: jiraBaseUrl,
       jira_key_regex: regex,
-      user_map: mapResult.ok ? mapResult.value : {},
+      user_map: userMap,
     },
   };
 }

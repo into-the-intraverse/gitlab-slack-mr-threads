@@ -47,10 +47,21 @@ channel. See `docs/deployment.md`.
 
 ~~~
 bun install
-bun test
+bun run test            # vitest
+bun run test:coverage   # + v8 coverage, fails below 95% (lines, statements, functions, branches)
+bun run test:mutation   # Stryker: are the tests actually checking anything?
+bun run test:e2e        # builds, then drives the compiled bot over a real socket
 ~~~
 
 All tests run in-process against a temp SQLite file and a fake Slack client. No external dependencies at test time.
+
+A pre-commit hook runs `bun run test:coverage` so coverage cannot quietly slide. It uses git's
+config-based hooks (git 2.54+), so it is version-controlled in `.githooks/config` — enable it once
+per clone:
+
+~~~
+git config --local include.path ../.githooks/config
+~~~
 
 ## Architecture at a glance
 

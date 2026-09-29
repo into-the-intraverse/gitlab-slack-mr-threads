@@ -109,9 +109,10 @@ describe("deriveStatus", () => {
   });
 
   it("update without changes.draft → status unchanged", () => {
-    const prev: Prev = { status: "open", approvalsCount: 0 };
+    // `approved`, not `open`: an edit to a description must not undo the quorum.
+    const prev: Prev = { status: "approved", approvalsCount: 2 };
     expect(deriveStatus(evt("update"), prev)).toEqual({
-      status: "open",
+      status: "approved",
       approvalsDelta: 0,
     });
   });
@@ -119,5 +120,40 @@ describe("deriveStatus", () => {
   it("reopen is treated as no-op in v1 (returns prev status)", () => {
     const prev: Prev = { status: "closed", approvalsCount: 0 };
     expect(deriveStatus(evt("reopen"), prev).status).toBe("closed");
+  });
+
+  it("the last revoked approval drops an approved MR back to open", () => {
+    const prev: Prev = { status: "approved", approvalsCount: 1 };
+    expect(deriveStatus(evt("unapproval"), prev)).toEqual({
+      status: "open",
+      approvalsDelta: -1,
+    });
+  });
+
+  // Only an *approved* MR falls back to open when its last approval goes. A draft
+  // that loses one stays a draft — the count is not what decides the status here.
+  it("a revoked approval below quorum leaves the status where it was", () => {
+    const prev: Prev = { status: "draft", approvalsCount: 1 };
+    expect(deriveStatus(evt("unapproval"), prev)).toEqual({
+      status: "draft",
+      approvalsDelta: -1,
+    });
+  });
+
+  // A missed `open` (bot added mid-flight, or an event lost) means the first
+  // event we see has no previous row to lean on. Every action must still answer.
+  describe("with no previous state", () => {
+    it.each([
+      ["approval", { status: "open", approvalsDelta: +1 }],
+      ["unapproval", { status: "open", approvalsDelta: -1 }],
+      ["update", { status: "open", approvalsDelta: 0 }],
+      ["reopen", { status: "open", approvalsDelta: 0 }],
+    ] as const)("%s falls back to open", (action, expected) => {
+      expect(deriveStatus(evt(action), null)).toEqual(expected);
+    });
+  });
+
+  it("refuses an action GitLab has not documented", () => {
+    expect(() => deriveStatus(evt("teleport" as never), null)).toThrow(/Unhandled action/);
   });
 });

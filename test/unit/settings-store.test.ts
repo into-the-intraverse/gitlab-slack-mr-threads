@@ -77,6 +77,24 @@ describe("SettingsStore", () => {
     expect("zzz-9").toMatch(re);
   });
 
+  it("hands back the same compiled regex until the pattern changes", async () => {
+    const store = makeSettingsStore(db);
+
+    const first = await store.jiraKeyRegex();
+    expect(await store.jiraKeyRegex()).toBe(first);
+
+    await store.write({ jira_key_regex: "ZZZ-\\d+" }, ACTOR);
+    expect(await store.jiraKeyRegex()).not.toBe(first);
+  });
+
+  it("rejects a Slack id with anything before or after it", async () => {
+    const store = makeSettingsStore(db);
+
+    await expect(store.write({ user_map: { "a.b": "U123x" } }, ACTOR)).rejects.toThrow();
+    await expect(store.write({ user_map: { "a.b": "xU123" } }, ACTOR)).rejects.toThrow();
+    await expect(store.write({ user_map: { "a.b": "U123" } }, ACTOR)).resolves.toBeUndefined();
+  });
+
   it("audits one row per changed key, with the actor and both values", async () => {
     const store = makeSettingsStore(db);
     await store.write({ default_channel_id: "C1", mentions_enabled: false }, ACTOR);
@@ -97,5 +115,32 @@ describe("SettingsStore", () => {
     await store.write({ default_channel_id: "C1" }, ACTOR);
     await store.write({ default_channel_id: "C1" }, ACTOR);
     expect(await listRecentSettingsChanges(db, 10)).toHaveLength(1);
+  });
+});
+
+// Rows can only get into these shapes by hand, but a settings table that stops
+// the worker is worse than one that quietly falls back to the defaults.
+describe("SettingsStore reading a hand-edited table", () => {
+  const putRow = (key: string, value: string) =>
+    db
+      .insertInto("settings")
+      .values({ key, value, updated_at: new Date().toISOString() })
+      .execute();
+
+  it("ignores a key that is not in the catalogue", async () => {
+    await putRow("favourite_colour", '"blue"');
+    expect(await makeSettingsStore(db).read()).toEqual(SETTINGS_DEFAULTS);
+  });
+
+  it("falls back to the default for a value that is not JSON", async () => {
+    await putRow("jira_key_regex", "ABC-\\d+");
+    expect((await makeSettingsStore(db).read()).jira_key_regex).toBe(
+      SETTINGS_DEFAULTS.jira_key_regex,
+    );
+  });
+
+  it("falls back to all defaults when a value has the wrong type", async () => {
+    await putRow("mentions_enabled", "123");
+    expect(await makeSettingsStore(db).read()).toEqual(SETTINGS_DEFAULTS);
   });
 });

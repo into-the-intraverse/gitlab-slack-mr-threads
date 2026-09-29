@@ -28,6 +28,9 @@ const rawSchema = z.object({
   // Empty means "no settings panel", so the bot still boots before the Slack
   // app has been reconfigured for Socket Mode.
   SLACK_APP_TOKEN: z.string().optional().default(""),
+  // Where the Slack Web API lives. Empty means slack.com; point it at an egress
+  // proxy, or at a stub in an end-to-end test. Must end with a slash.
+  SLACK_API_URL: z.string().url().optional().or(z.literal("")).default(""),
   DEV_SIMULATOR: z.string().optional().default("false"),
 });
 
@@ -42,6 +45,7 @@ export type Config = {
   slackDirectoryRefreshMs: number;
   slackAdminUserIds: string[];
   slackAppToken: string | null;
+  slackApiUrl: string | null;
   devSimulator: boolean;
 };
 
@@ -61,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
       .map((s) => s.trim())
       .filter(Boolean),
     slackAppToken: parsed.SLACK_APP_TOKEN || null,
+    slackApiUrl: parsed.SLACK_API_URL || null,
     devSimulator: parseBool(parsed.DEV_SIMULATOR),
   };
 }

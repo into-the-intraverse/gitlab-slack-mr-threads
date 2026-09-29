@@ -97,4 +97,16 @@ describe("project settings", () => {
   it("refuses to configure a project nobody has seen", async () => {
     await expect(setProjectChannel(db, 999, "C-X", ACTOR)).rejects.toThrow(/999/);
   });
+
+  it("switches a project back on after it was switched off", async () => {
+    await touchProject(db, { projectId: 12345, name: "api-gateway" });
+    await setProjectEnabled(db, 12345, false, ACTOR);
+    await setProjectEnabled(db, 12345, true, ACTOR);
+
+    expect((await getProject(db, 12345))?.enabled).toBe(true);
+    expect((await listRecentSettingsChanges(db, 10)).map((r) => r.new_value)).toEqual([
+      "true",
+      "false",
+    ]);
+  });
 });

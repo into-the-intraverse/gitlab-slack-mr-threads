@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# `bun run lint` is deliberately not here: biome is red on master with
+# pre-existing findings, so a lint job would be red from its first run and stop
+# meaning anything. Measure the delta on the files a change touches instead.
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: build
+        run: bun run build
+      - name: tests and coverage thresholds
+        run: bun run test:coverage
+      - name: end-to-end against the built artefact
+        run: bun run test:e2e
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the image
+        run: docker build -t gitlab-slack-mr-threads:ci .
+      # The cheapest test there is for the class of bug the unit suite cannot
+      # see: does the thing we actually ship start and answer.
+      - name: the image boots and serves /healthz
+        run: |
+          docker run -d --name bot -p 8080:8080 \
+            -e SLACK_BOT_TOKEN=xoxb-ci \
+            -e SLACK_API_URL=http://127.0.0.1:1/api/ \
+            -e GITLAB_WEBHOOK_SECRET=ci-secret \
+            -e GITLAB_BASE_URL=https://gitlab.example.com \
+            -e DATABASE_URL=file:/app/data/app.db \
+            gitlab-slack-mr-threads:ci
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/healthz; then exit 0; fi
+            sleep 1
+          done
+          echo "the container never answered:"
+          docker logs bot
+          exit 1

@@ -1,9 +1,9 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import pino from "pino";
 import { openDb, type KyselyDb } from "../../src/db/index.js";
+import type { Logger } from "../../src/logger.js";
 import { migrateToLatest } from "../../src/db/migrate.js";
 import { buildApp } from "../../src/server/app.js";
 import { makeWorker, type Worker } from "../../src/worker/worker.js";
@@ -38,6 +38,8 @@ export async function createTestApp(opts?: {
   slackUserMap?: Record<string, string>;
   jiraBaseUrl?: string;
   socketConnected?: () => boolean;
+  /** Pass one to assert on what the bot logged; the default swallows everything. */
+  log?: Logger;
 }): Promise<TestApp> {
   // The DB lives in its own tmpdir so that cleanup() can close resources
   // without deleting the DB file — this enables the restart-recovery test to
@@ -45,12 +47,9 @@ export async function createTestApp(opts?: {
   const ownedDbDir = opts?.dbPath ? null : mkdtempSync(join(tmpdir(), "glsp-db-"));
   const dbPath = opts?.dbPath ?? join(ownedDbDir!, "test.db");
   const { db } = openDb(`file:${dbPath}`);
+  await migrateToLatest(db);
 
-  const here = dirname(fileURLToPath(import.meta.url));
-  const folder = resolve(here, "../../migrations");
-  await migrateToLatest(db, folder);
-
-  const log = pino({ level: "silent" });
+  const log = opts?.log ?? pino({ level: "silent" });
   const slack = new FakeSlackClient();
   slack.users = opts?.slackUsers ?? [];
 

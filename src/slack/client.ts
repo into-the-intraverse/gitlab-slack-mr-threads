@@ -56,8 +56,9 @@ export interface SlackClient {
   getUser(userId: string): Promise<SlackUserInfo>;
 }
 
-export function makeRealSlackClient(token: string): SlackClient {
-  const web = new WebClient(token);
+/** `apiUrl` overrides the Slack base URL (an egress proxy, or a stub in a test). */
+export function makeRealSlackClient(token: string, apiUrl?: string | null): SlackClient {
+  const web = new WebClient(token, apiUrl ? { slackApiUrl: apiUrl } : {});
   return {
     async postParent({ channel, text, blocks }) {
       const r = await web.chat.postMessage({ channel, text, blocks: blocks as never });

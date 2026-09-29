@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { countPending } from "../../src/persistence/inbox.js";
 import { listProjects } from "../../src/settings/projects.js";
+import approval from "../fixtures/gitlab/mr_approval.json" with { type: "json" };
 import opened from "../fixtures/gitlab/mr_opened.json" with { type: "json" };
 import { createTestApp, drainWorker, postWebhook } from "../helpers/test-app.js";
 
@@ -59,12 +60,21 @@ describe("an instance with no default channel", () => {
 
       await t.setProjectOff(12345);
 
-      await postWebhook(t.app, opened, { webhookUuid: "wh-off-2" });
-      await drainWorker(t.worker);
+      // An approval, not another `open`: an approval would post a visible reply,
+      // so "no Slack calls" means dropped rather than processed into a no-op.
+      await postWebhook(t.app, approval, { webhookUuid: "wh-off-2" });
+      await expect(t.worker.processOnce()).resolves.toBe(true);
 
       expect(t.slack.calls).toHaveLength(0);
       // Dropped, not held: "off" is a decision, "unconfigured" is temporary.
       expect(await countPending(t.db)).toBe(0);
+
+      const audit = await t.db
+        .selectFrom("audit_log")
+        .selectAll()
+        .where("correlation_id", "=", "wh-off-2")
+        .execute();
+      expect(audit).toMatchObject([{ slack_action: "skip", action: "approval" }]);
     } finally {
       await t.cleanup();
     }

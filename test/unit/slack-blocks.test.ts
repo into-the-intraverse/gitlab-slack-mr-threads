@@ -120,6 +120,19 @@ describe("renderParentBlocks", () => {
     }
   });
 
+  // GitLab keeps whatever whitespace the author typed; the headline must not.
+  it("trims a padded title, with a ticket key and without one", () => {
+    const padded = { ...base, title: "  Make the thing faster  " };
+    expect(headline(renderParentBlocks({ ...padded, jiraKey: null }).blocks)).toContain(
+      "|Make the thing faster>",
+    );
+    expect(renderParentBlocks({ ...padded, jiraKey: null }).text).toBe(
+      "[NO-JIRA] Make the thing faster — Open",
+    );
+    // With a key that is not in the title, stripping finds nothing to remove.
+    expect(renderParentBlocks(padded).text).toBe("[SD-36717] Make the thing faster — Open");
+  });
+
   it("keeps the title when it is nothing but the jira key", () => {
     const { text } = renderParentBlocks({ ...base, title: "SD-36717" });
     expect(text).toBe("[SD-36717] SD-36717 — Open");

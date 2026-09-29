@@ -38,6 +38,24 @@ describe("loadConfig", () => {
     expect(loadConfig({ ...BASE_ENV, SLACK_APP_TOKEN: "xapp-1" }).slackAppToken).toBe("xapp-1");
   });
 
+  it("talks to slack.com unless another address is given", () => {
+    expect(loadConfig(BASE_ENV).slackApiUrl).toBeNull();
+    expect(loadConfig({ ...BASE_ENV, SLACK_API_URL: "" }).slackApiUrl).toBeNull();
+    expect(
+      loadConfig({ ...BASE_ENV, SLACK_API_URL: "https://proxy.internal/api/" }).slackApiUrl,
+    ).toBe("https://proxy.internal/api/");
+  });
+
+  it("refuses a Slack address that is not a URL", () => {
+    expect(() => loadConfig({ ...BASE_ENV, SLACK_API_URL: "proxy.internal" })).toThrow();
+  });
+
+  // A value typed into a .env file or a compose block keeps its stray spaces.
+  it("reads a boolean flag that came with whitespace around it", () => {
+    expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: " TRUE " }).devSimulator).toBe(true);
+    expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: " off " }).devSimulator).toBe(false);
+  });
+
   it("parses DEV_SIMULATOR", () => {
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "true" }).devSimulator).toBe(true);
     expect(loadConfig({ ...BASE_ENV, DEV_SIMULATOR: "1" }).devSimulator).toBe(true);

@@ -19,6 +19,10 @@ export class FakeSlackClient implements SlackClient {
   public users: SlackUser[] = [];
   /** Set to make listUsers() reject, mimicking a missing `users:read` scope. */
   public listUsersError: Error | null = null;
+  /** Set to make every post/update reject, mimicking a Slack outage. */
+  public postError: Error | null = null;
+  /** Set to make publishHome() reject, e.g. an expired App Home view. */
+  public publishHomeError: Error | null = null;
   /** Last view published per user — the panel only ever cares about the latest. */
   public publishedHome = new Map<string, unknown>();
   public openedModals: Array<{ triggerId: string; view: unknown }> = [];
@@ -29,16 +33,19 @@ export class FakeSlackClient implements SlackClient {
   private nextTsN = 1_700_000_000;
 
   async postParent(input: PostParentInput): Promise<PostResult> {
+    if (this.postError) throw this.postError;
     const ts = `${this.nextTsN++}.000100`;
     this.calls.push({ kind: "postParent", ...input, ts });
     return { ts };
   }
 
   async updateParent(input: UpdateParentInput): Promise<void> {
+    if (this.postError) throw this.postError;
     this.calls.push({ kind: "updateParent", ...input });
   }
 
   async postReply(input: PostReplyInput): Promise<void> {
+    if (this.postError) throw this.postError;
     this.calls.push({ kind: "postReply", ...input });
   }
 
@@ -48,6 +55,7 @@ export class FakeSlackClient implements SlackClient {
   }
 
   async publishHome({ userId, view }: { userId: string; view: unknown }): Promise<void> {
+    if (this.publishHomeError) throw this.publishHomeError;
     this.publishedHome.set(userId, view);
   }
 

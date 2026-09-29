@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../helpers/test-db.js";
 import {
   insertInboxRow,
+  backoffMs,
   claimNextPending,
   markProcessed,
   markFailed,
   countPending,
   countFailed,
+  oldestPendingAgeMs,
 } from "../../src/persistence/inbox.js";
 
 let tdb: TestDb;
@@ -83,5 +85,50 @@ describe("inbox persistence", () => {
     await insertInboxRow(tdb.db, { webhook_uuid: "u1", event_uuid: null, payload_json: "{}" });
     for (let i = 0; i < 10; i++) await markFailed(tdb.db, "u1", "x");
     expect(await countFailed(tdb.db)).toBe(1);
+  });
+
+  it("a row that has burnt its attempts is neither claimed nor counted as pending", async () => {
+    await insertInboxRow(tdb.db, { webhook_uuid: "u1", event_uuid: null, payload_json: "{}" });
+    for (let i = 0; i < 10; i++) await markFailed(tdb.db, "u1", "x");
+
+    const farFuture = new Date(Date.now() + 600_000).toISOString();
+    expect(await claimNextPending(tdb.db, farFuture)).toBeUndefined();
+    expect(await countPending(tdb.db)).toBe(0);
+  });
+
+  it("markFailed on a uuid that is not there counts as a first attempt", async () => {
+    await expect(markFailed(tdb.db, "ghost", "boom")).resolves.toBeUndefined();
+    expect(await countPending(tdb.db)).toBe(0);
+  });
+
+  it("backoffMs starts at zero and caps at 30s", () => {
+    expect(backoffMs(0)).toBe(0);
+    expect(backoffMs(-1)).toBe(0);
+    expect(backoffMs(1)).toBe(1000);
+    expect(backoffMs(2)).toBe(2000);
+    expect(backoffMs(99)).toBe(30_000);
+  });
+});
+
+describe("queue age", () => {
+  it("is zero while the queue is empty", async () => {
+    expect(await oldestPendingAgeMs(tdb.db)).toBe(0);
+  });
+
+  it("measures the oldest row that is still waiting", async () => {
+    await insertInboxRow(tdb.db, { webhook_uuid: "u1", event_uuid: null, payload_json: "{}" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const age = await oldestPendingAgeMs(tdb.db);
+    expect(age).toBeGreaterThan(0);
+    // An age, not a timestamp: the health endpoint publishes this number.
+    expect(age).toBeLessThan(60_000);
+  });
+
+  it("ignores rows that are already processed", async () => {
+    await insertInboxRow(tdb.db, { webhook_uuid: "u1", event_uuid: null, payload_json: "{}" });
+    await new Promise((r) => setTimeout(r, 20));
+    await markProcessed(tdb.db, "u1");
+    expect(await oldestPendingAgeMs(tdb.db)).toBe(0);
   });
 });

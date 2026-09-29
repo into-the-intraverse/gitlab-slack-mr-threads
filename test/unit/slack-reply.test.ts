@@ -140,4 +140,10 @@ describe("renderReplyText", () => {
   it("reopen → null in v1", () => {
     expect(renderReplyText(evt("reopen"))).toBeNull();
   });
+
+  // deriveStatus throws on an unknown action, but a reply is decoration: a new
+  // GitLab action should leave the thread quiet, not fail the event.
+  it("stays quiet for an action it does not know", () => {
+    expect(renderReplyText(evt("teleport" as never))).toBeNull();
+  });
 });

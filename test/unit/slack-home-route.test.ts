@@ -53,6 +53,15 @@ describe("routeSocketEvent", () => {
     expect(slack.publishedHome.size).toBe(0);
   });
 
+  // Slack sends url_verification and a few other bodies with no `event` at all.
+  it("survives an Events API body with no event in it", async () => {
+    await expect(routeSocketEvent(deps, "events_api", {})).resolves.toBeUndefined();
+    await expect(
+      routeSocketEvent(deps, "events_api", { event: { type: "app_home_opened" } }),
+    ).resolves.toBeUndefined();
+    expect(slack.publishedHome.size).toBe(0);
+  });
+
   it("reads the kind of interaction from the payload, not the envelope", async () => {
     await touchProject(db, { projectId: 12345, name: "api-gateway" });
     // The envelope says `interactive`; only the payload knows it is a click.

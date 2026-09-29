@@ -1,0 +1,17 @@
+# Config-based git hooks (git >= 2.54). Not active until this file is included:
+#
+#     git config --local include.path ../.githooks/config
+#
+# The path is relative to .git/config. Check what is wired up with
+# `git hook list pre-commit`, and run it by hand with `git hook run pre-commit`.
+#
+# Skip it for one commit with `git commit --no-verify`, or turn it off for good
+# with `git config --local hook.coverage.enabled false`.
+
+[hook "coverage"]
+	event = pre-commit
+	# Fails the commit when any of the four coverage metrics drops below the
+	# thresholds in vitest.config.ts. Runs against the working tree, not the
+	# index: staged-only checking would mean stashing, which has already cost
+	# this repo a session's work.
+	command = bun run test:coverage

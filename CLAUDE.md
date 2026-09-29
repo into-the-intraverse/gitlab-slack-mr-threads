@@ -5,10 +5,13 @@ Non-obvious facts about this repo. See `README.md` for what the bot does.
 ## Commands
 
 ~~~
-bun run dev       # tsx watch --env-file=.env src/index.ts — requires .env to exist
-bun run test      # vitest, 115 tests
-bun run build     # tsc, must stay clean
-bun run migrate   # not usually needed; index.ts migrates on boot
+bun run dev            # tsx watch --env-file=.env src/index.ts — requires .env to exist
+bun run test           # vitest, 378 tests (e2e excluded)
+bun run test:coverage  # same run + v8 coverage; fails under 95% on any of the four metrics
+bun run test:e2e       # builds, then runs the compiled bot in its own process
+bun run test:mutation  # stryker; ~6 minutes, score is ~84%
+bun run build          # tsc, must stay clean
+bun run migrate        # not usually needed; boot migrates
 ~~~
 
 `tsx` takes its subcommand first: `tsx watch --env-file=.env src/index.ts`. Putting the flag
@@ -25,6 +28,22 @@ git stash -q -u; bun x biome check <files>; git stash pop -q
 `git checkout -- <file>` reverts to HEAD, not to the state before an experiment. It has already
 wiped a session's uncommitted work here — use it only deliberately.
 
+## The coverage gate
+
+A **pre-commit hook runs `bun run test:coverage`** and fails the commit when coverage drops
+below the thresholds. It uses git's config-based hooks (git >= 2.54), not `.git/hooks/*`, so the
+definition is version-controlled in `.githooks/config` — but a config include is never enabled
+automatically, so **each clone has to opt in once**:
+
+~~~
+git config --local include.path ../.githooks/config   # path is relative to .git/config
+git hook list pre-commit                              # should print: coverage
+~~~
+
+`git hook run pre-commit` runs it by hand; `git commit --no-verify` skips it once;
+`git config --local hook.coverage.enabled false` turns it off. Nothing here reads
+`.git/hooks/`, so a stale sample file in there is not what ran.
+
 ## Architecture
 
 `POST /webhooks/gitlab` verifies `X-Gitlab-Token`, writes the raw payload to the `inbox` table
@@ -37,7 +56,7 @@ two MRs can share a ticket.
 
 Settings live in the `settings` and `project_settings` tables, not in env — env keeps only
 secrets, `SLACK_ADMIN_USER_IDS`, and the things needed before the database is open (`LOG_LEVEL`,
-`WORKER_POLL_MS`, `SLACK_DIRECTORY_REFRESH_MS`). The worker re-reads settings on every event, with
+`WORKER_POLL_MS`, `SLACK_DIRECTORY_REFRESH_MS`, `SLACK_API_URL`). The worker re-reads settings on every event, with
 no cache, so a change in the panel applies to the next event. **Anything added to the panel must
 be hot** — the UI has no "restart required" affordance and should not gain one.
 
@@ -95,6 +114,52 @@ records calls, and the worker. Drive it with `postWebhook()` then `drainWorker()
 Rendering changes are easy to make without breaking a test — the byline regroup passed all 107
 tests untouched because branch formatting was uncovered. When changing the message, add the
 assertion first.
+
+Coverage is 100% of lines, statements and functions and ~98.6% of branches, and
+`vitest.config.ts` fails the run below 95% on any of them. `src/index.ts` is excluded because
+the wiring it used to hold now lives in `src/bootstrap.ts`, which is tested with every
+collaborator stubbed (`test/unit/bootstrap.test.ts` asserts boot order and shutdown order);
+`src/db/schema.ts` is excluded because it is types only. **The three branch arms still uncovered
+are unreachable, not forgotten**: `socket?.connected() ?? false` twice in `bootstrap.ts` and
+`res?.numInsertedOrUpdatedRows ?? 0` in `inbox.ts` exist only because TypeScript cannot narrow a
+`let` inside a closure, or types the driver result as optional. Deleting them breaks `tsc`;
+reaching them needs a state the runtime cannot produce. Don't contort either side to close them.
+
+Three modules are covered through their libraries rather than the network: `slack/client.ts`
+mocks `@slack/web-api`, `slack/socket.ts` mocks `@slack/socket-mode`, and `logger.ts` mocks
+`pino` — the last one on purpose, because really building the dev logger spawns a pino-pretty
+worker thread that outlives the test process.
+
+## Migrations are modules, not files on disk
+
+`src/db/migrations/index.ts` lists every migration as a static import, and `migrateToLatest()`
+takes that record (tests inject their own). **Adding a migration means adding a line there** — a
+forgotten line fails at once, because the table it creates will not exist.
+
+They live under `src/` rather than at the repo root on purpose: it is what makes them ordinary
+modules that `tsc` compiles into `dist` with everything else. The previous arrangement scanned a
+directory and `import()`ed whatever it found, which behaves differently under vitest, under `tsx`
+and under plain node — and shipped a build that could not boot at all (`.ts` migrations copied
+next to `dist`, `ERR_UNKNOWN_FILE_EXTENSION` on the first one) while 376 tests, 100% line
+coverage and a mutation run stayed green. Node ≥ 22.6 strips types, so it also booted fine on a
+modern dev machine and failed only on the `node:20` image.
+
+**Nothing is read from disk at runtime any more except `public/simulator.html`.** Keep it that
+way; if something has to be, check it against `dist/`, not just against `src/`.
+
+## The end-to-end test
+
+`test/e2e/boot.test.ts` spawns the compiled `dist/index.js` with `--no-experimental-strip-types`
+(so it behaves like the image's node:20), points `SLACK_API_URL` at a fake Slack HTTP server, and
+drives one MR through a real socket. A second case boots it against a Slack that refuses every
+connection and asserts the webhook endpoint still answers — `bootstrap.ts` caps the first
+directory load at `DIRECTORY_WARMUP_MS`, because the Web API client retries a dead Slack for
+about half an hour and GitLab would spend that time getting connection refused.
+
+It is out of the default run because it needs a build, and out of the coverage and mutation
+numbers because a separate process is not instrumented — it buys a different kind of confidence,
+not a better score. `.github/workflows/ci.yml` additionally builds the image and curls `/healthz`
+inside it, which is the same check one level closer to what actually deploys.
 
 ## Dev simulator
 
