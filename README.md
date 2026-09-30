@@ -62,6 +62,18 @@ git config --local include.path ../.githooks/config
 
 ## Architecture at a glance
 
+```mermaid
+flowchart TD
+  gitlab[GitLab] -->|MR webhook| receiver["Receiver<br/>POST /webhooks/gitlab"]
+  receiver -->|"raw payload,<br/>keyed by webhook UUID"| inbox[(inbox)]
+  inbox -->|oldest unprocessed row| worker["Worker<br/>tick loop"]
+  worker <-->|one row per MR| threads[(mr_threads)]
+  worker -->|"parent message,<br/>thread replies"| slack[Slack]
+  settings[("settings,<br/>project_settings")] -->|read on every event| worker
+  panel["Settings panel<br/>App Home"] -->|writes| settings
+  slack <-->|"Socket Mode<br/>(outbound WebSocket)"| panel
+```
+
 - **Receiver** (Fastify `POST /webhooks/gitlab`): verifies `X-Gitlab-Token`, writes the raw payload to a durable SQLite `inbox` table keyed by `X-Gitlab-Webhook-UUID`, returns 200 in under 50 ms.
 - **Worker** (in-process tick loop): claims the oldest unprocessed inbox row, derives the MR's new status, mutates the `mr_threads` row, calls Slack.
 - **Settings panel** (Slack App Home over Socket Mode): an outbound WebSocket, so no inbound Slack endpoint exists. Renders the current state and writes changes to the settings tables.
