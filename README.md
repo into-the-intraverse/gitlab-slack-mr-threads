@@ -16,10 +16,7 @@ One merge request = one Slack thread. Parent message stays live with current sta
 
 ## What it does not do (yet)
 
-- Reopened MRs
-- MR comments mirrored into the thread
-- Slack → GitLab 2-way sync
-- Multiple Slack workspaces
+See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Quick start (local)
 
