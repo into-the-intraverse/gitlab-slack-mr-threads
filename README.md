@@ -20,11 +20,11 @@ See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Quick start (local)
 
-See `docs/local-setup.md`.
+See [`docs/local-setup.md`](docs/local-setup.md).
 
 ## Deployment
 
-See `docs/deployment.md`.
+See [`docs/deployment.md`](docs/deployment.md).
 
 ## Configuration
 
@@ -38,7 +38,7 @@ Split in two:
   Slack, stored in the database, applied to the next event without a restart.
 
 A fresh instance boots unconfigured and holds incoming events until someone picks a default
-channel. See `docs/deployment.md`.
+channel. See [`docs/deployment.md`](docs/deployment.md).
 
 ## Running tests
 
