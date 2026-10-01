@@ -88,4 +88,4 @@ flowchart TD
 
 ## License
 
-Internal — Example Workspace.
+[MIT](LICENSE).
